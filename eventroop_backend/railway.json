@@ -1,0 +1,9 @@
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pip install -r eventroop_backend/requirements.txt"
+  },
+  "deploy": {
+    "start": "bash start.sh"
+  }
+}
