@@ -1,1 +1,1 @@
-web: bash start.sh
+web: gunicorn eventroop_backend.wsgi
