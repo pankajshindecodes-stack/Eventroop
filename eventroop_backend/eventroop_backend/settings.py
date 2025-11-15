@@ -29,18 +29,27 @@ if DEBUG :
 
 else:
     # PostgreSQL 
-    tmpPostgres = urlparse(os.getenv("DATABASE_URL"))
+    # tmpPostgres = urlparse(os.getenv("DATABASE_URL"))
+    # DATABASES = {
+    #     'default': {
+    #         'ENGINE': 'django.db.backends.postgresql',
+    #         'NAME': tmpPostgres.path.replace('/', ''),
+    #         'USER': tmpPostgres.username,
+    #         'PASSWORD': tmpPostgres.password,
+    #         'HOST': tmpPostgres.hostname,
+    #         'PORT': 5432,
+    #         'OPTIONS': dict(parse_qsl(tmpPostgres.query)),
+    #     }
+    # }
+    import dj_database_url
+    import os
+
     DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': tmpPostgres.path.replace('/', ''),
-            'USER': tmpPostgres.username,
-            'PASSWORD': tmpPostgres.password,
-            'HOST': tmpPostgres.hostname,
-            'PORT': 5432,
-            'OPTIONS': dict(parse_qsl(tmpPostgres.query)),
-        }
+        "default": dj_database_url.parse(
+            os.getenv("DATABASE_URL")
+        )
     }
+
 
 # ----------------- APPLICATIONS -----------------
 INSTALLED_APPS = [
