@@ -31,7 +31,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "password",
             "confirm_password"
         ]
-        read_only_fields = ["id", "created_by","user_type"]
+        read_only_fields = ["id", "user_type","created_by",'last_working_day']
 
     # ---------------------- Validation ----------------------
     def validate(self, data):
@@ -112,7 +112,6 @@ class StaffSerializer(BaseUserSerializer):
             "last_working_day",
             "assigned_manager"
         ]
-        read_only_fields = ["employee_id","last_working_day"]
     
     def get_assigned_manager(self, user):
         try:

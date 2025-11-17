@@ -201,7 +201,7 @@ class ManagerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return only managers created by this owner."""
         return CustomUser.objects.filter(
-            user_type="VSRE_MANAGER",
+            user_type=CustomUser.UserTypes.VSRE_MANAGER,
             created_by=self.request.user
         )
 
@@ -295,7 +295,7 @@ class StaffViewSet(viewsets.ModelViewSet):
         Return only staff created by the logged-in owner/manager.
         """
         return CustomUser.objects.filter(
-            user_type="VSRE_STAFF",
+            user_type=CustomUser.UserTypes.VSRE_STAFF,
             created_by=self.request.user
         )
 
