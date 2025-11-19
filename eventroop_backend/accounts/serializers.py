@@ -16,6 +16,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             "id",
+            "profile_pic",
             "first_name",
             "middle_name",
             "last_name",
@@ -159,26 +160,9 @@ class ManagerHierarchySerializer(serializers.ModelSerializer):
 class CustomerRegistrationSerializer(BaseUserSerializer):
     """Public registration for customers."""
 
-    class Meta:
-        model = CustomUser
-        fields = [
-            'email',
-            'mobile_number',
-            'first_name',
-            'middle_name',
-            'last_name',
-            'gender',
-            'user_type',
-            'address',
-            'city',
-            'is_active',
-            "password",
-            "confirm_password",
-        ]
-        read_only_fields = ('user_type','is_active')
-
     def create(self, validated_data):
         validated_data["user_type"] = "CUSTOMER"
+        validated_data["created_by"] = None
         return super().create(validated_data)
 
 

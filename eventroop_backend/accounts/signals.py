@@ -14,7 +14,7 @@ def generate_employee_id(sender, instance, created, **kwargs):
         # Map each user type to a short prefix
         prefix_map = {
             "VSRE_MANAGER": "VSRE-M",
-            "LINE_MANAGER": "VSRE-RM",
+            "LINE_MANAGER": "VSRE-LM",
             "VSRE_STAFF": "VSRE-S",
         }
 
@@ -23,18 +23,21 @@ def generate_employee_id(sender, instance, created, **kwargs):
         
         if not prefix:
             return
-
-        # Count how many existing users have this type (for sequential numbering)
+        
+        # Count how many existing users have this type (for sequential numbering)        
         count = (
-            CustomUser.objects.filter(user_type=instance.user_type)
+            CustomUser.objects.filter(
+                created_by=instance.created_by, # filter only same owner
+                user_type=instance.user_type    # filter same user_type
+            )
             .exclude(employee_id__isnull=True)
             .count()
             + 1
         )
 
         # Create ID format: PREFIX-YEAR-XXX
-        count+10000
-        instance.employee_id = f"{prefix}-{year}-{count:03d}"
+
+        instance.employee_id = f"{prefix}-{year}-{instance.created_by.id:03d}-{count:03d}"
 
         # Save again without triggering another signal loop
         instance.save(update_fields=["employee_id"])

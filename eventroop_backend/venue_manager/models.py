@@ -2,12 +2,11 @@ from django.db import models
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from accounts.models import CustomUser
-from cloudinary.models import CloudinaryField
 
 # ----------------------------- Photo for all -----------------------
 class Photos(models.Model):
     """Generic model to support multiple photos for any entity."""
-    image = CloudinaryField('image', folder='entity_photos', overwrite=True)
+    image = models.ImageField(upload_to="entety_photos/",null=True,blank=True,)
     is_primary = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     

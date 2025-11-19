@@ -21,6 +21,7 @@ class CustomUserCreationForm(forms.ModelForm):
     class Meta:
         model = CustomUser
         fields = (
+            "profile_pic",
             "email",
             "mobile_number",
             "first_name",
@@ -79,6 +80,7 @@ class CustomUserAdmin(BaseUserAdmin):
     add_form = CustomUserCreationForm
 
     list_display = (
+        "id",
         "email",
         "first_name",
         "last_name",
@@ -106,6 +108,7 @@ class CustomUserAdmin(BaseUserAdmin):
             "Personal Details",
             {
                 "fields": (
+                    "profile_pic",
                     "first_name",
                     "middle_name",
                     "last_name",
@@ -197,7 +200,7 @@ class CustomUserAdmin(BaseUserAdmin):
 class UserHierarchyAdmin(admin.ModelAdmin):
     """Manage reporting relationships between users."""
 
-    list_display = ("user", "parent", "owner", "level", "band","department")
+    list_display = ("id","user", "parent", "owner", "level", "band","department")
     list_filter = ("owner", "parent", "level","band","department")
     search_fields = (
         "user__email",

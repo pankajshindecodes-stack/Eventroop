@@ -5,7 +5,6 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from datetime import timedelta
 
-
 # -------------------------------------------------------------------
 #                         USER MANAGER
 # -------------------------------------------------------------------
@@ -150,7 +149,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         ("O", "Other"),
         ("N", "Prefer not to say"),
     ]
+    profile_pic = models.ImageField(upload_to="profile_photos/",null=True,blank=True,)
 
+    # profile_pic = CloudinaryField('image', folder='entity_photos', overwrite=True)
     employee_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
     email = models.EmailField(unique=True)
     mobile_number = models.CharField(max_length=15, unique=True)

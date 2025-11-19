@@ -3,6 +3,10 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+admin.site.site_header = "Eventroop Admin Panel"
+admin.site.site_title = "Eventroop Admin"
+admin.site.index_title = "Welcome to Eventroop Administration"
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
@@ -10,5 +14,6 @@ urlpatterns = [
     # path('booking/', include('booking.urls')),
 ]
 
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT,)
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
