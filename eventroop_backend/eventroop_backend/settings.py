@@ -19,6 +19,7 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 # ----------------- APPLICATIONS -----------------
 INSTALLED_APPS = [
     # Django apps
+    # 'simpleui',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

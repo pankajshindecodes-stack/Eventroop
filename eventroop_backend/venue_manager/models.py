@@ -20,7 +20,12 @@ class Photos(models.Model):
         indexes = [
             models.Index(fields=['content_type', 'object_id']),
         ]
-
+    
+    @classmethod
+    def filter_by_instance(cls, instance):
+        content_type = ContentType.objects.get_for_model(instance.__class__)
+        return cls.objects.filter(content_type=content_type, object_id=instance.id)
+    
     def __str__(self):
         return f"Photo for {self.content_object} ({'primary' if self.is_primary else 'secondary'})"
 
