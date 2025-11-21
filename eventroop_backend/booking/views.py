@@ -1,31 +1,38 @@
-from rest_framework.generics import ListAPIView, RetrieveAPIView
-from rest_framework import permissions
-from rest_framework.pagination import PageNumberPagination
 from venue_manager.models import Venue
 from .serializers import VenueSerializer
-from .helpers import get_city_filtered_queryset  # assuming helper is in utils.py
+from rest_framework import viewsets, permissions
+from rest_framework.pagination import PageNumberPagination
 
-
-class AllVenuesView(ListAPIView):
+class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    List all venues, optionally filtered by city (?city=Pune)
+    Single API for:
+      - GET /venues/          → list venues with filters
+      - GET /venues/<id>/     → venue details
     """
     serializer_class = VenueSerializer
     permission_classes = [permissions.AllowAny]
     pagination_class = PageNumberPagination
-    def get_queryset(self):
-        queryset = Venue.objects.filter(is_deleted=False, is_active=True)
-        print(queryset)
-        return get_city_filtered_queryset(self.request, queryset)
-
-
-class VenueDetailView(RetrieveAPIView):
-    """
-    Retrieve a single venue by ID, with optional city filtering (?city=Pune)
-    """
-    serializer_class = VenueSerializer
-    permission_classes = [permissions.AllowAny]
     lookup_field = "pk"
 
-    def get_queryset(self):
-        return  Venue.objects.filter(is_deleted=False, is_active=True)
+    queryset = Venue.objects.filter(is_deleted=False, is_active=True)
+
+    filterset_fields = {
+        "city": ["iexact", "icontains"],
+        "is_active": ["iexact"],
+        "capacity": ["gte", "lte", "exact"],
+        "price_per_event": ["gte", "lte"],
+        "rooms": ["gte", "lte"],
+        "floors": ["gte", "lte"],
+        "external_decorators_allow": ["iexact"],
+        "external_caterers_allow": ["iexact"],
+    }
+
+    search_fields = [
+        "name",
+        "description",
+        "address",
+        "city",
+        "primary_contact",
+        "secondary_contact",
+    ]
+

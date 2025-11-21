@@ -29,13 +29,13 @@ class PhotosAdmin(admin.ModelAdmin):
 class VenueAdmin(admin.ModelAdmin):
     list_display = [
         'name', 'owner', 'manager', 'capacity', 'price_per_event', 
-        'is_active', 'is_deleted', 'created_at'
+        'is_active', 'is_deleted', 'city'
     ]
     list_filter = [
-        'is_active', 'is_deleted', 'external_decorators_allow', 
+        'city','is_active', 'is_deleted', 'external_decorators_allow', 
         'external_caterers_allow', 'created_at'
     ]
-    search_fields = ['name', 'address', 'primary_contact', 'owner__email']
+    search_fields = ['name', 'address','city' 'primary_contact', 'owner__email']
     readonly_fields = ['created_at', 'updated_at']
     filter_horizontal = ['staff']
     
@@ -45,7 +45,7 @@ class VenueAdmin(admin.ModelAdmin):
         }),
         ('Venue Details', {
             'fields': (
-                'name', 'description', 'address', 
+                'name', 'description', 'address', 'city',
                 'primary_contact', 'secondary_contact',
                 'website', 'social_links'
             )

@@ -1,9 +1,8 @@
-from django.urls import path
-from .views import AllVenuesView, VenueDetailView
+from rest_framework.routers import DefaultRouter
+from .views import PublicVenueViewSet
 
 app_name = 'booking'
+router = DefaultRouter()
+router.register("public-venues", PublicVenueViewSet, basename="public-venues")
 
-urlpatterns = [
-    path("all-venues/", AllVenuesView.as_view(), name="all-venues"),
-    path("venue-detail/<pk>/", VenueDetailView.as_view(), name="venue-detail"),
-]
+urlpatterns = router.urls

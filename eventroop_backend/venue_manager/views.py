@@ -13,6 +13,25 @@ from .models import Venue, Photos
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
     permission_classes = [IsAuthenticated, VenueAccessPermission]
+    filterset_fields = {
+        "city": ["iexact", "icontains"],
+        "is_active": ["exact"],
+        "is_deleted": ["exact"],
+        "manager": ["exact"],
+        "staff": ["exact"],
+        "capacity": ["gte", "lte", "exact"],
+        "price_per_event": ["gte", "lte"],
+        "rooms": ["gte", "lte"],
+        "floors": ["gte", "lte"],
+        "external_decorators_allow": ["exact"],
+        "external_caterers_allow": ["exact"],
+    }
+    search_fields = [
+        "name",
+        "description",
+        "address",
+        "city",
+    ]
 
     # --------------------------------------------------------
     # FILTER VENUES BASED ON ROLE
