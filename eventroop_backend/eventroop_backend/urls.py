@@ -11,7 +11,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
     path('management/', include('venue_manager.urls')),
-    # path('booking/', include('booking.urls')),
+    path('booking/', include('booking.urls')),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT,)
