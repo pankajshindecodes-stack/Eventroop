@@ -5,6 +5,6 @@ def get_city_filtered_queryset(request, queryset):
     city = request.query_params.get('city')
     
     if city:
-        return queryset.filter(location__city__iexact=city)
+        return queryset.filter(city__iexact=city)
     
     return queryset

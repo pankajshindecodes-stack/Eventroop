@@ -15,6 +15,7 @@ class AllVenuesView(ListAPIView):
     pagination_class = PageNumberPagination
     def get_queryset(self):
         queryset = Venue.objects.filter(is_deleted=False, is_active=True)
+        print(queryset)
         return get_city_filtered_queryset(self.request, queryset)
 
 
@@ -27,5 +28,4 @@ class VenueDetailView(RetrieveAPIView):
     lookup_field = "pk"
 
     def get_queryset(self):
-        queryset = Venue.objects.filter(is_deleted=False, is_active=True)
-        return get_city_filtered_queryset(self.request, queryset)
+        return  Venue.objects.filter(is_deleted=False, is_active=True)

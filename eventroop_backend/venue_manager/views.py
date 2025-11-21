@@ -5,16 +5,14 @@ from rest_framework.response import Response
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 
-from .models import Venue, Photos
+from .permissions import VenueAccessPermission
 from .serializers import VenueSerializer, PhotosSerializer
 from accounts.models import CustomUser
-from .permissions import VenueAccessPermission
-from rest_framework.parsers import MultiPartParser, FormParser
+from .models import Venue, Photos
 
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
     permission_classes = [IsAuthenticated, VenueAccessPermission]
-    parser_classes = (MultiPartParser, FormParser)
 
     # --------------------------------------------------------
     # FILTER VENUES BASED ON ROLE
@@ -23,6 +21,7 @@ class VenueViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if user.is_owner:
+            print(Venue.objects.filter(owner=user, is_deleted=False))
             return Venue.objects.filter(owner=user, is_deleted=False)
 
         if user.is_manager:
@@ -36,11 +35,12 @@ class VenueViewSet(viewsets.ModelViewSet):
     # --------------------------------------------------------
     # CREATE WITH OWNER
     # --------------------------------------------------------
+
     def perform_create(self, serializer):
         user = self.request.user
         if not user.is_owner:
             raise PermissionDenied("Only owners can create venues.")
-        serializer.save(owner=user)
+        serializer.save(owner=user,is_active=True)
 
     # --------------------------------------------------------
     # SOFT DELETE
@@ -71,14 +71,14 @@ class VenueViewSet(viewsets.ModelViewSet):
         # Owner can assign any manager under him
         if user.is_owner:
             if manager.owner != user:
-                return Response({"error": "Manager does not belong to you"}, status=403)
+                return Response({"error": "Manager does not belong to you"}, status=status.HTTP_403_FORBIDDEN)
 
         # Manager can only assign staff to HIS venue
         elif user.is_manager:
             if venue.manager_id != user.id:
-                return Response({"error": "You are not manager of this venue"}, status=403)
+                return Response({"error": "You are not manager of this venue"}, status=status.HTTP_403_FORBIDDEN)
         else:
-            return Response({"error": "Not allowed"}, status=403)
+            return Response({"error": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
 
         venue.manager = manager
         venue.save()
@@ -94,7 +94,7 @@ class VenueViewSet(viewsets.ModelViewSet):
         staff_ids = request.data.get("staff_ids", [])
 
         if not isinstance(staff_ids, list):
-            return Response({"error": "staff_ids must be a list"}, status=400)
+            return Response({"error": "staff_ids must be a list"}, status=status.HTTP_400_BAD_REQUEST)
 
         staff_members = CustomUser.objects.filter(
             id__in=staff_ids,
@@ -107,15 +107,15 @@ class VenueViewSet(viewsets.ModelViewSet):
                 if s.owner != user:
                     return Response(
                         {"error": f"Staff {s.id} does not belong to you"},
-                        status=403
+                        status=status.HTTP_403_FORBIDDEN
                     )
 
         # Manager: can only assign staff to HIS venue
         elif user.is_manager:
             if venue.manager_id != user.id:
-                return Response({"error": "You are not manager of this venue"}, status=403)
+                return Response({"error": "You are not manager of this venue"}, status=status.HTTP_403_FORBIDDEN)
         else:
-            return Response({"error": "Not allowed"}, status=403)
+            return Response({"error": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
 
         venue.staff.set(staff_members)
         venue.save()
@@ -154,4 +154,4 @@ class VenueViewSet(viewsets.ModelViewSet):
             object_id=venue.id
         )
 
-        return Response(PhotosSerializer(photo).data, status=201)
+        return Response(PhotosSerializer(photo).data, status=status.HTTP_201_CREATED)

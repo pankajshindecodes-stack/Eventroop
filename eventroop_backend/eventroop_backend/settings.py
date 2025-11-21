@@ -56,21 +56,30 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# ----------------- CORS & CSRF -----------------
-CORS_ALLOW_CREDENTIALS = True
+# ----------------- CORS & CSRF -----------------CORS_ALLOW_CREDENTIALS = True
+
 CORS_ALLOWED_ORIGINS = [
     "https://booking-venue-gamma.vercel.app",
     "http://localhost:5173",
+    "http://127.0.0.1:8000",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://booking-venue-gamma.vercel.app",
-    "https://booking-venue-backend-dev.up.railway.app",
-    "https://booking-venue-backend.vercel.app",
+    "https://*.vercel.app",
+    "https://*.up.railway.app",
+    "http://localhost",
+    "http://127.0.0.1",
     "http://localhost:5173",
+    "http://127.0.0.1:8000",
 ]
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SAMESITE = 'None'
+
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False
 
 # ----------------- URLS & WSGI -----------------
 ROOT_URLCONF = 'eventroop_backend.urls'
