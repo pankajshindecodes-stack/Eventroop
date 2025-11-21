@@ -9,11 +9,12 @@ admin.site.index_title = "Welcome to Value Occations Administration"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('accounts/', include('accounts.urls')),
-    path('management/', include('venue_manager.urls')),
-    path('booking/', include('booking.urls')),
+    path('accounts/', include(('accounts.urls', 'accounts'), namespace='accounts')),
+    path('management/', include(('venue_manager.urls', 'venue_manager'), namespace='venue_manager')),
+    path('booking/', include(('booking.urls', 'booking'), namespace='booking')),
 ]
 
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT,)
+# Serve media and static files during development
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

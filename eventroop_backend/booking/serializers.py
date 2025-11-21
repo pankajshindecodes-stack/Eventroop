@@ -1,10 +1,9 @@
 from rest_framework import serializers
-from venue_manager.models import Venue, Photos, Location
-from venue_manager.serializers import LocationSerializer,PhotoSerializer
+from venue_manager.models import Venue, Photos
+from venue_manager.serializers import PhotosSerializer
 
 class VenueSerializer(serializers.ModelSerializer):
-    location = LocationSerializer(read_only=True)
-    photos = PhotoSerializer(many=True, read_only=True)
+    photos = PhotosSerializer(many=True, read_only=True)
 
     class Meta:
         model = Venue
