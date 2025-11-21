@@ -41,12 +41,11 @@ class VenueSerializer(serializers.ModelSerializer):
         model = Venue
         fields = [
             "id", "owner", "manager", "staff",
-            "name", "description", "address",
+            "name", "description", "address","city",
             "primary_contact", "secondary_contact",
             "website", "social_links",
             "capacity", "price_per_event", "rooms", "floors",
-            "parking_slots",
-            "external_decorators_allow", "external_caterers_allow",
+            "parking_slots","external_decorators_allow", "external_caterers_allow",
             "amenities", "seating_arrangement",
             "is_active", "is_deleted",
             "created_at", "updated_at","photos_links",
@@ -98,11 +97,11 @@ class VenueSerializer(serializers.ModelSerializer):
         # Update photos
         if photos_data:
             ct = ContentType.objects.get_for_model(Venue)
-            Photos.objects.filter(content_type=ct, object_id=instance.id).delete()
+            # Photos.objects.filter(content_type=ct, object_id=instance.id).delete()
             photo_objects = [
                 Photos(
                         image=image,
-                        is_primary=False, # TODO: need to manage primary image
+                        is_primary=False, # TODO: need to create separate api to manage photos
                         content_type=ct,
                         object_id=instance.id,
                     )

@@ -54,6 +54,7 @@ class Venue(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     address = models.TextField()
+    city = models.CharField(max_length=200)
     primary_contact = models.CharField(max_length=15, blank=True, null=True)
     secondary_contact = models.CharField(max_length=15, blank=True, null=True)
     website = models.URLField(max_length=500,blank=True,null=True,help_text="Official website ")
