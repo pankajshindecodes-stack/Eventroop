@@ -12,14 +12,17 @@ class PhotosInline(GenericTabularInline):
 # ----------------------------- Photos Admin -----------------------
 @admin.register(Photos)
 class PhotosAdmin(admin.ModelAdmin):
-    list_display = ['id', 'content_object', 'is_primary', 'uploaded_at']
+    list_display = ['id', 'image', 'is_primary', 'entity_object', 'uploaded_at']
     list_filter = ['is_primary', 'uploaded_at', 'content_type']
-    search_fields = ['content_object__name']
+    search_fields = ['image']
     readonly_fields = ['uploaded_at']
     list_select_related = ['content_type']
-    
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related('content_type')
+
+    def entity_object(self, obj):
+        """Show linked model instance (Venue / Service / Resource)."""
+        return str(obj.entity)
+
+    entity_object.short_description = "Entity"
 
 # ----------------------------- Venue Admin -----------------------
 @admin.register(Venue)

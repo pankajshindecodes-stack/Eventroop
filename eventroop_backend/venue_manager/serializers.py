@@ -1,141 +1,124 @@
-# serializers.py
 from rest_framework import serializers
-from .models import Venue, Photos,VSREOwnerProfile, VSREStaffProfile, VSREManagerProfile, Location
+from django.contrib.contenttypes.models import ContentType
+from .models import Venue, Photos
+from accounts.models import CustomUser
 
-class LocationSerializer(serializers.ModelSerializer):
-    full_address = serializers.ReadOnlyField()
 
-    class Meta:
-        model = Location
-        fields = [
-            "id",
-            "address_line_1",
-            "address_line_2",
-            "city",
-            "state",
-            "country",
-            "postal_code",
-            "full_address",
-        ]
-
-class PhotoSerializer(serializers.ModelSerializer):
-    image = serializers.SerializerMethodField()
+# --------------------------------------------------------
+# PHOTO SERIALIZER
+# --------------------------------------------------------
+class PhotosSerializer(serializers.ModelSerializer):
     class Meta:
         model = Photos
         fields = ["id", "image", "is_primary", "uploaded_at"]
         read_only_fields = ["id", "uploaded_at"]
-    
-    def get_image(obj):
-        return obj.image.url if obj else None
 
+
+# --------------------------------------------------------
+# VENUE SERIALIZER
+# --------------------------------------------------------
 class VenueSerializer(serializers.ModelSerializer):
-    # Nested read-only data for existing photos
-    photos_data = PhotoSerializer(source='photos', many=True, read_only=True)
-    location = LocationSerializer()
-    
-    # Write-only field for uploading new photos
-    new_photos = serializers.ListField( 
-        child=serializers.ImageField(),
-        write_only=True,
-        required=False,
-        allow_empty=True
-    )
 
-    owner = serializers.PrimaryKeyRelatedField(
-        queryset=VSREOwnerProfile.objects.all(),  
-        required=False,
-        allow_null=True
-    )
+    owner = serializers.PrimaryKeyRelatedField(read_only=True)
 
     manager = serializers.PrimaryKeyRelatedField(
-        queryset=VSREManagerProfile.objects.all(),
+        queryset=CustomUser.objects.filter(
+            user_type__in=["VSRE_MANAGER", "LINE_MANAGER"]
+        ),
         required=False,
         allow_null=True
     )
-    
+
     staff = serializers.PrimaryKeyRelatedField(
-        queryset=VSREStaffProfile.objects.all(),
         many=True,
+        queryset=CustomUser.objects.filter(user_type="VSRE_STAFF"),
         required=False
     )
+
+    photos_links = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Venue
         fields = [
-            'id', 'owner', 'manager', 'staff', 'name', 'location', 'description',
-            'capacity', 'price_per_event', 'rooms', 'floors', 'parking_slots',
-            'external_decorators_allow', 'external_caterers_allow',
-            'amenities', 'seating_arrangement', 'is_active', 'is_deleted',
-            'created_at', 'updated_at', 'new_photos', 'photos_data'
+            "id", "owner", "manager", "staff",
+            "name", "description", "address",
+            "primary_contact", "secondary_contact",
+            "website", "social_links",
+            "capacity", "price_per_event", "rooms", "floors",
+            "parking_slots",
+            "external_decorators_allow", "external_caterers_allow",
+            "amenities", "seating_arrangement",
+            "is_active", "is_deleted",
+            "created_at", "updated_at","photos_links",
         ]
-        read_only_fields = ('id', 'owner', 'created_at', 'updated_at', 'is_deleted')
+        read_only_fields = ["is_deleted", "created_at", "updated_at"]
 
+    # --------------------------------------------------------
+    # CREATE VENUE WITH PHOTOS
+    # --------------------------------------------------------
     def create(self, validated_data):
-        request = self.context.get('request')
-        if not request or not request.user:
-            raise serializers.ValidationError("Request context is required")
-        
-        user = request.user
+        photos_data = self.context['request'].FILES.getlist('photos')
+        staff_data = validated_data.pop("staff", [])
 
-        # Auto-assign owner
-        if hasattr(user, 'owner_profile'):
-            validated_data['owner'] = user.owner_profile
-        else:
-            raise serializers.ValidationError(
-                {"owner": "Only owners can create venues."}
-            )
+        venue = Venue.objects.create(**validated_data)
 
-        # Extract related data
-        new_photos = validated_data.pop('new_photos', [])  # CHANGED: photos → new_photos
-        staff_data = validated_data.pop('staff', [])
-        location_data = validated_data.pop('location')
-
-        # Create related location
-        location = Location.objects.create(**location_data)
-
-        # Create main venue
-        venue = Venue.objects.create(location=location, **validated_data)
-
-        # Add staff ManyToMany
         if staff_data:
-            print("staff_data:", staff_data)
             venue.staff.set(staff_data)
 
-        # Add photos
-        for img in new_photos: 
-            Photos.objects.create(venue=venue, image=img)
+        if photos_data:
+            ct = ContentType.objects.get_for_model(Venue)
+
+            photo_objects = [
+                Photos(
+                        image=image,
+                        is_primary=False, # TODO: need to manage primary image
+                        content_type=ct,
+                        object_id=venue.id,
+                    )
+                for image in photos_data
+            ]
+            # Bulk create → MUCH faster
+            Photos.objects.bulk_create(photo_objects)
 
         return venue
 
+    # --------------------------------------------------------
+    # UPDATE VENUE + UPDATE/REPLACE PHOTOS
+    # --------------------------------------------------------
     def update(self, instance, validated_data):
-        # Extract related data
-        new_photos = validated_data.pop('new_photos', [])  
-        staff_data = validated_data.pop('staff', None)
-        location_data = validated_data.pop('location', None)
+        photos_data = self.context['request'].FILES.getlist('photos')
+        staff_data = validated_data.pop("staff", None)
 
-        # Update location if provided
-        if location_data:
-            location_serializer = LocationSerializer(
-                instance.location, 
-                data=location_data, 
-                partial=True
-            )
-            if location_serializer.is_valid():
-                location_serializer.save()
-            else:
-                raise serializers.ValidationError({
-                    "location": location_serializer.errors
-                })
-
-        # Update main venue instance
         instance = super().update(instance, validated_data)
 
-        # Update staff if provided
+        # Update staff
         if staff_data is not None:
             instance.staff.set(staff_data)
 
-        # Add new photos
-        for img in new_photos:
-            Photos.objects.create(venue=instance, image=img)
+        # Update photos
+        if photos_data:
+            ct = ContentType.objects.get_for_model(Venue)
+            Photos.objects.filter(content_type=ct, object_id=instance.id).delete()
+            photo_objects = [
+                Photos(
+                        image=image,
+                        is_primary=False, # TODO: need to manage primary image
+                        content_type=ct,
+                        object_id=instance.id,
+                    )
+                for image in photos_data
+            ]
+            # Bulk create → MUCH faster
+            Photos.objects.bulk_create(photo_objects)
+            
 
         return instance
+    
+
+    # --------------------------------------------------------
+    # GET PHOTO
+    # --------------------------------------------------------
+    def get_photos_links(self, obj):
+        photos = obj.photos.all()  # all photos
+        return PhotosSerializer(photos, many=True).data
+

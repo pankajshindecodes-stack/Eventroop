@@ -1,40 +1,32 @@
 from django.db import models
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.fields import GenericRelation
+
 from accounts.models import CustomUser
 
-# ----------------------------- Photo for all -----------------------
+# ----------------------------- Photo for all -----------------------from django.db import models
 class Photos(models.Model):
-    """Generic model to support multiple photos for any entity."""
-    image = models.ImageField(upload_to="entety_photos/",null=True,blank=True,)
+    image = models.ImageField(upload_to="entity_photos/")
     is_primary = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    
-    # Generic Foreign Key to link to any model
+
+    # Generic relation
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()
-    content_object = GenericForeignKey('content_type', 'object_id')
-    
+    content_object = GenericForeignKey("content_type", "object_id")
+
     class Meta:
         ordering = ["-is_primary", "uploaded_at"]
-        indexes = [
-            models.Index(fields=['content_type', 'object_id']),
-        ]
-    
-    @classmethod
-    def filter_by_instance(cls, instance):
-        content_type = ContentType.objects.get_for_model(instance.__class__)
-        return cls.objects.filter(content_type=content_type, object_id=instance.id)
-    
-    def __str__(self):
-        return f"Photo for {self.content_object} ({'primary' if self.is_primary else 'secondary'})"
 
-# ----------------------------- Location for all  -----------------------
+    def __str__(self):
+        return f"Photo {self.id} (Primary={self.is_primary})"
+
 
 # ----------------------------- Venue -----------------------
 class Venue(models.Model):
     # User Relationships
-    
+    photos = GenericRelation(Photos, related_query_name="venue_photos")
     owner = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
@@ -92,16 +84,6 @@ class Venue(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
-    @property
-    def photos(self):
-        """Get all photos for this venue"""
-        return Photos.objects.filter_by_instance(self)
-    
-    @property
-    def primary_photo(self):
-        """Get primary photo for this venue"""
-        return self.photos.filter(is_primary=True).first()
-    
     def soft_delete(self):
         self.is_active = False
         self.is_deleted = True
@@ -109,11 +91,18 @@ class Venue(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.id})"
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['owner', 'is_active']),
+            models.Index(fields=['is_active', 'is_deleted']),
+        ]
 
 # ----------------------------- Service -----------------------
 class Service(models.Model):
     """Caterers, Decorators, Photographers, etc."""
-    
+    photos = GenericRelation(Photos, related_query_name="service_photos")
+
     owner = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
@@ -153,23 +142,20 @@ class Service(models.Model):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    @property
-    def photos(self):
-        """Get all photos for this service"""
-        return Photos.objects.filter_by_instance(self)
-    
-    @property
-    def primary_photo(self):
-        """Get primary photo for this service"""
-        return self.photos.filter(is_primary=True).first()
 
     def __str__(self):
         return f"{self.name} ({self.owner})"
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['owner', 'is_active']),
+            # models.Index(fields=['service_type']),
+        ]
 
 # ----------------------------- Resource -----------------------
 class Resource(models.Model):
     """Physical inventory like Tables, Chairs, Carpets, Fans"""
-     
+    photos = GenericRelation(Photos, related_query_name="resource_photos")
     owner = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
@@ -212,15 +198,13 @@ class Resource(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    @property
-    def photos(self):
-        """Get all photos for this resource"""
-        return Photos.objects.filter_by_instance(self)
-    
-    @property
-    def primary_photo(self):
-        """Get primary photo for this resource"""
-        return self.photos.filter(is_primary=True).first()
-
     def __str__(self):
         return f"{self.name} ({self.owner})"
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['owner', 'is_active']),
+            models.Index(fields=['available_quantity']),
+        ]
+        
+    

@@ -130,7 +130,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         MASTER_ADMIN = "MASTER_ADMIN", "Master Admin"
         VSRE_OWNER = "VSRE_OWNER", "VSRE Owner"
         VSRE_MANAGER = "VSRE_MANAGER", "VSRE Manager"
-        LINE_MANAGER = "LINE_MANAGER", "Reporting Manager"
+        LINE_MANAGER = "LINE_MANAGER", "Line Manager"
         VSRE_STAFF = "VSRE_STAFF", "VSRE Staff"
         CUSTOMER = "CUSTOMER", "Customer"
 
@@ -183,10 +183,32 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["mobile_number"]
 
-    def __str__(self):
-        return f"{self.first_name} {self.last_name} ({self.user_type})"
 
+    @property
+    def is_owner(self):
+        return self.user_type in [self.UserTypes.VSRE_OWNER, self.UserTypes.MASTER_ADMIN]
+    
+    @property
+    def is_manager(self):
+        return self.user_type in [self.UserTypes.VSRE_MANAGER, self.UserTypes.LINE_MANAGER]
+    
+    @property
+    def is_vsre_staff(self):
+        return self.user_type in [self.UserTypes.VSRE_STAFF]
+    
     def get_full_name(self):
+        return f"{self.first_name} {self.last_name} ({self.user_type})"
+   
+    def can_manage_entity(self, entity):
+        """Check if user has permission to manage specific entity"""
+        if self.is_owner:
+            return entity.owner == self
+        elif self.is_manager:
+            return entity.manager == self
+        else:  # staff
+            return entity.is_vsre_staff == self
+    
+    def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.user_type})"
 
 # -------------------------------------------------------------------

@@ -5,42 +5,6 @@ from django.dispatch import receiver
 from django.utils import timezone
 from .models import CustomUser,UserHierarchy
 
-# ---------------------------
-# Auto generate Employee Id 
-# ---------------------------
-@receiver(post_save, sender=CustomUser)
-def generate_employee_id(sender, instance, created, **kwargs):
-    if created and not instance.employee_id:
-        # Map each user type to a short prefix
-        prefix_map = {
-            "VSRE_MANAGER": "VSRE-M",
-            "LINE_MANAGER": "VSRE-LM",
-            "VSRE_STAFF": "VSRE-S",
-        }
-
-        prefix = prefix_map.get(instance.user_type,None)
-        year = timezone.now().year
-        
-        if not prefix:
-            return
-        
-        # Count how many existing users have this type (for sequential numbering)        
-        count = (
-            CustomUser.objects.filter(
-                created_by=instance.created_by, # filter only same owner
-                user_type=instance.user_type    # filter same user_type
-            )
-            .exclude(employee_id__isnull=True)
-            .count()
-            + 1
-        )
-
-        # Create ID format: PREFIX-YEAR-XXX
-
-        instance.employee_id = f"{prefix}-{year}-{instance.created_by.id:03d}-{count:03d}"
-
-        # Save again without triggering another signal loop
-        instance.save(update_fields=["employee_id"])
 
 # ---------------------------
 # Assign Group on User Save
@@ -128,3 +92,40 @@ def create_hierarchy_for_new_user(sender, instance, created, **kwargs):
         owner=instance,  # or handle differently as per needs
         level=0,
     )
+    
+# ---------------------------
+# Auto generate Employee Id 
+# ---------------------------
+@receiver(post_save, sender=CustomUser)
+def generate_employee_id(sender, instance, created, **kwargs):
+    if created and not instance.employee_id:
+        # Map each user type to a short prefix
+        prefix_map = {
+            "VSRE_MANAGER": "VSRE-M",
+            "LINE_MANAGER": "VSRE-LM",
+            "VSRE_STAFF": "VSRE-S",
+        }
+
+        prefix = prefix_map.get(instance.user_type,None)
+        year = timezone.now().year
+        
+        if not prefix:
+            return
+        
+        # Count how many existing users have this type (for sequential numbering)        
+        count = (
+            CustomUser.objects.filter(
+                created_by=instance.created_by, # filter only same owner
+                user_type=instance.user_type    # filter same user_type
+            )
+            .exclude(employee_id__isnull=True)
+            .count()
+            + 1
+        )
+
+        # Create ID format: PREFIX-YEAR-XXX
+
+        instance.employee_id = f"{prefix}-{year}-{instance.created_by.id:03d}-{count:03d}"
+
+        # Save again without triggering another signal loop
+        instance.save(update_fields=["employee_id"])

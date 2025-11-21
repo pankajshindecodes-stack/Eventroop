@@ -1,167 +1,157 @@
-# #views.py
-# from .models import Venue
-# from .serializers import VenueSerializer
-# from .permissions import DashboardAccessPermission
-# from rest_framework import viewsets, status
-# from rest_framework.response import Response
-# from rest_framework.parsers import JSONParser, MultiPartParser
-# from rest_framework.pagination import PageNumberPagination
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import PermissionDenied
 
-# class VenueViewSet(viewsets.ViewSet):
-#     serializer_class = VenueSerializer
-#     parser_classes = [JSONParser, MultiPartParser]
-#     # permission_classes = [DashboardAccessPermission]
-#     pagination_class = PageNumberPagination
+from .models import Venue, Photos
+from .serializers import VenueSerializer, PhotosSerializer
+from accounts.models import CustomUser
+from .permissions import VenueAccessPermission
+from rest_framework.parsers import MultiPartParser, FormParser
 
-#     def get_queryset(self):
-#         user = self.request.user
-#         user_type = getattr(user, "user_type", None)
+class VenueViewSet(viewsets.ModelViewSet):
+    serializer_class = VenueSerializer
+    permission_classes = [IsAuthenticated, VenueAccessPermission]
+    parser_classes = (MultiPartParser, FormParser)
 
-#         # Base queryset
-#         if user.is_superuser:
-#             queryset = Venue.objects.all()
-#         else:
-#             queryset = Venue.objects.filter(is_deleted=False)
+    # --------------------------------------------------------
+    # FILTER VENUES BASED ON ROLE
+    # --------------------------------------------------------
+    def get_queryset(self):
+        user = self.request.user
 
+        if user.is_owner:
+            return Venue.objects.filter(owner=user, is_deleted=False)
 
-#         # Filter by user type if authenticated
-#         if user.is_authenticated:
-#             filters = {
-#                 "VSRE_OWNER": {"owner": getattr(user, "owner_profile", None)},
-#                 "VSRE_MANAGER": {"manager": getattr(user, "manager_profile", None)},
-#             }
-#             if user_type in filters:
-#                 queryset = queryset.filter(**filters[user_type])
-#         return queryset.order_by("-id")
+        if user.is_manager:
+            return Venue.objects.filter(manager=user, is_deleted=False)
 
-#     def get_object(self, pk=None):
-#         """Helper method to get single venue object"""
-#         try:
-#             if pk is None:
-#                 pk = self.kwargs.get('pk')
-#             return self.get_queryset().get(pk=pk)
-#         except Venue.DoesNotExist:
-#             return None
+        if user.is_staff_role:
+            return Venue.objects.filter(staff=user, is_deleted=False)
 
-#     def list(self, request):
-#         """Get list of venues"""
-#         try:
-#             queryset = self.get_queryset()
-            
-#             # Apply pagination
-#             paginator = self.pagination_class()
-#             page = paginator.paginate_queryset(queryset, request)
-            
-#             if page is not None:
-#                 serializer = self.serializer_class(page, many=True)
-#                 return paginator.get_paginated_response(serializer.data)
-            
-#             serializer = self.serializer_class(queryset, many=True)
-#             return Response(serializer.data, status=status.HTTP_200_OK)
-            
-#         except Exception as e:
-#             return Response({
-#                 "status": "error",
-#                 "message": "Failed to list venues",
-#                 "error": str(e)
-#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Venue.objects.none()
 
-#     def retrieve(self, request, pk=None):
-#         """Get single venue details"""
-#         try:
-#             instance = self.get_object(pk)
-#             if not instance:
-#                 return Response({
-#                     "status": "error",
-#                     "message": "Venue not found"
-#                 }, status=status.HTTP_404_NOT_FOUND)
-                
-#             serializer = self.serializer_class(instance)
-#             return Response(serializer.data, status=status.HTTP_200_OK)
-            
-#         except Exception as e:
-#             return Response({
-#                 "status": "error",
-#                 "message": "Failed to retrieve venue",
-#                 "error": str(e)
-#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    # --------------------------------------------------------
+    # CREATE WITH OWNER
+    # --------------------------------------------------------
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not user.is_owner:
+            raise PermissionDenied("Only owners can create venues.")
+        serializer.save(owner=user)
 
-#     def create(self, request):
-#         """Create new venue"""
-#         serializer = self.serializer_class(data=request.data,context={'request': request})
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data, status=status.HTTP_201_CREATED)
-#         else:
-#             return Response({
-#                 "status": "error",
-#                 "message": "Validation failed",
-#                 "errors": serializer.errors
-#             }, status=status.HTTP_400_BAD_REQUEST)
-                
+    # --------------------------------------------------------
+    # SOFT DELETE
+    # --------------------------------------------------------
+    def perform_destroy(self, instance):
+        instance.soft_delete()
 
-#     def partial_update(self, request, pk=None):
-#         """Partial update venue (PATCH)"""
-#         try:
-#             instance = self.get_object(pk)
-#             if not instance:
-#                 return Response({
-#                     "status": "error",
-#                     "message": "Venue not found"
-#                 }, status=status.HTTP_404_NOT_FOUND)
+    # --------------------------------------------------------
+    # ASSIGN MANAGER
+    # --------------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="assign-manager")
+    def assign_manager(self, request, pk=None):
+        venue = self.get_object()
+        user = request.user
 
-#             serializer = self.serializer_class(instance, data=request.data, partial=True)
-#             if serializer.is_valid():
-#                 serializer.save()
-#                 return Response(serializer.data, status=status.HTTP_200_OK)
-#             else:
-#                 return Response({
-#                     "status": "error",
-#                     "message": "Validation failed",
-#                     "errors": serializer.errors
-#                 }, status=status.HTTP_400_BAD_REQUEST)
-                
-#         except Exception as e:
-#             return Response({
-#                 "status": "error",
-#                 "message": "Failed to update venue",
-#                 "error": str(e)
-#             }, status=status.HTTP_400_BAD_REQUEST)
+        manager_id = request.data.get("manager_id")
+        if not manager_id:
+            return Response({"error": "manager_id is required"}, status=400)
 
-#     def destroy(self, request, pk=None):
-#         """Delete venue"""
-#         try:
-#             instance = self.get_object(pk)
-#             if not instance:
-#                 return Response({
-#                     "status": "error",
-#                     "message": "Venue not found"
-#                 }, status=status.HTTP_404_NOT_FOUND)
+        try:
+            manager = CustomUser.objects.get(
+                id=manager_id,
+                user_type__in=["VSRE_MANAGER", "LINE_MANAGER"]
+            )
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Manager not found"}, status=404)
 
-#             user = request.user
-#             user_type = getattr(user, "user_type", None)
+        # Owner can assign any manager under him
+        if user.is_owner:
+            if manager.owner != user:
+                return Response({"error": "Manager does not belong to you"}, status=403)
 
-#             # Perform deletion based on user type
-#             if user_type == "MASTER_ADMIN":
-#                 instance.delete()
-#                 message = "Venue permanently deleted"
-#             elif user_type == "VSRE_OWNER" and instance.owner.user == user:
-#                 instance.soft_delete()
-#                 message = "Venue soft deleted successfully"
-#             else:
-#                 return Response({
-#                     "status": "error",
-#                     "message": "You don't have permission to delete this venue"
-#                 }, status=status.HTTP_403_FORBIDDEN)
+        # Manager can only assign staff to HIS venue
+        elif user.is_manager:
+            if venue.manager_id != user.id:
+                return Response({"error": "You are not manager of this venue"}, status=403)
+        else:
+            return Response({"error": "Not allowed"}, status=403)
 
-#             return Response({
-#                 "status": "success",
-#                 "message": message
-#             }, status=status.HTTP_200_OK)
-            
-#         except Exception as e:
-#             return Response({
-#                 "status": "error",
-#                 "message": "Failed to delete venue",
-#                 "error": str(e)
-#             }, status=status.HTTP_400_BAD_REQUEST)
+        venue.manager = manager
+        venue.save()
+        return Response({"message": "Manager assigned successfully"})
+
+    # --------------------------------------------------------
+    # ASSIGN STAFF
+    # --------------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="assign-staff")
+    def assign_staff(self, request, pk=None):
+        venue = self.get_object()
+        user = request.user
+        staff_ids = request.data.get("staff_ids", [])
+
+        if not isinstance(staff_ids, list):
+            return Response({"error": "staff_ids must be a list"}, status=400)
+
+        staff_members = CustomUser.objects.filter(
+            id__in=staff_ids,
+            user_type="VSRE_STAFF"
+        )
+
+        # Owner: staff must belong to owner
+        if user.is_owner:
+            for s in staff_members:
+                if s.owner != user:
+                    return Response(
+                        {"error": f"Staff {s.id} does not belong to you"},
+                        status=403
+                    )
+
+        # Manager: can only assign staff to HIS venue
+        elif user.is_manager:
+            if venue.manager_id != user.id:
+                return Response({"error": "You are not manager of this venue"}, status=403)
+        else:
+            return Response({"error": "Not allowed"}, status=403)
+
+        venue.staff.set(staff_members)
+        venue.save()
+
+        return Response({"message": "Staff assigned successfully"})
+
+    # --------------------------------------------------------
+    # UPLOAD PHOTO
+    # --------------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="upload-photo")
+    def upload_photo(self, request, pk=None):
+        venue = self.get_object()
+        image = request.FILES.get("image")
+        is_primary = request.data.get("is_primary", False)
+
+        if not image:
+            return Response({"error": "Image is required"}, status=400)
+
+        ct = ContentType.objects.get_for_model(Venue)
+
+        # If marking this as primary -> unset previous primary
+        if str(is_primary).lower() in ["true", "1", "yes"]:
+            is_primary = True
+            Photos.objects.filter(
+                content_type=ct,
+                object_id=venue.id,
+                is_primary=True
+            ).update(is_primary=False)
+        else:
+            is_primary = False
+
+        photo = Photos.objects.create(
+            image=image,
+            is_primary=is_primary,
+            content_type=ct,
+            object_id=venue.id
+        )
+
+        return Response(PhotosSerializer(photo).data, status=201)

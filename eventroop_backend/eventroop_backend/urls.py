@@ -10,7 +10,7 @@ admin.site.index_title = "Welcome to Value Occations Administration"
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
-    # path('management/', include('venue_manager.urls')),
+    path('management/', include('venue_manager.urls')),
     # path('booking/', include('booking.urls')),
 ]
 

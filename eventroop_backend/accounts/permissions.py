@@ -6,26 +6,30 @@ class IsMasterAdmin(BasePermission):
         return (
             request.user
             and request.user.is_authenticated
-            and request.user.user_type == "MASTER_ADMIN"
+            and request.is_superuser
         )
+
+    
+    @property
+    def is_vsre_staff(self):
+        return self.user_type in [self.UserTypes.VSRE_STAFF]
 
 class IsVSREOwner(BasePermission):
     """Allow only VSRE_OWNER."""
     def has_permission(self, request, view):
         return (
             request.user.is_authenticated and 
-            request.user.user_type == "VSRE_OWNER"
+            request.user.is_owner
         )
 
 
 class IsVSREOwnerOrManager(BasePermission):
     """Allow both VSRE_OWNER and VSRE_MANAGER."""
-    ALLOWED_ROLES = ["VSRE_OWNER", "VSRE_MANAGER"]
 
     def has_permission(self, request, view):
         return (
             request.user.is_authenticated and
-            request.user.user_type in self.ALLOWED_ROLES
+            request.user.is_manager or request.user.is_owner 
         )
 
 class IsCreator(BasePermission):
