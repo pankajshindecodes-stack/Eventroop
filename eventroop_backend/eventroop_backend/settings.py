@@ -60,7 +60,10 @@ MIDDLEWARE = [
 # ----------------- CORS & CSRF -----------------CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
-    "https://booking-venue-gamma.vercel.app",
+    "https://booking-venue-gamma.vercel.app", 
+    "https://booking-venue-three.vercel.app", 
+    "https://vaishnavimedicare.com",
+    "https://valueoccasions.com",
     "http://localhost:5173",
     "http://127.0.0.1:8000",
 ]
@@ -68,6 +71,8 @@ CORS_ALLOWED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS = [
     "https://*.vercel.app",
     "https://*.up.railway.app",
+    "https://vaishnavimedicare.com",
+    "https://valueoccasions.com",
     "http://localhost",
     "http://127.0.0.1",
     "http://localhost:5173",
