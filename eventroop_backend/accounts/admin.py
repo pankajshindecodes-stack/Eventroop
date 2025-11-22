@@ -387,9 +387,6 @@ class PricingModelAdmin(admin.ModelAdmin):
         "plan_type",
         "price_display",
         "duration_days",
-        "max_venues",
-        "max_services",
-        "max_resources",
         "is_active",
         "created_by",
         "created_at",
@@ -416,13 +413,6 @@ class PricingModelAdmin(admin.ModelAdmin):
                     "duration_days",
                     "is_active",
                 ),
-                "classes": ("wide",)
-            },
-        ),
-        (
-            "Usage Limits",
-            {
-                "fields": ("max_venues", "max_services", "max_resources"),
                 "classes": ("wide",)
             },
         ),

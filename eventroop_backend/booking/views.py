@@ -18,7 +18,6 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
 
     filterset_fields = {
         "city": ["iexact", "icontains"],
-        "is_active": ["iexact"],
         "capacity": ["gte", "lte", "exact"],
         "price_per_event": ["gte", "lte"],
         "rooms": ["gte", "lte"],

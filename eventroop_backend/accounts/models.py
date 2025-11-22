@@ -284,9 +284,6 @@ class PricingModel(models.Model):
     plan_type = models.CharField(max_length=20, choices=PLAN_TYPES)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     duration_days = models.PositiveIntegerField(blank=True, null=True)
-    max_venues = models.IntegerField(default=1)
-    max_services = models.IntegerField(default=1)
-    max_resources = models.IntegerField(default=1)
     is_active = models.BooleanField(default=True)
 
     created_by = models.ForeignKey(
