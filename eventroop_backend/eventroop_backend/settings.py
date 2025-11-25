@@ -57,7 +57,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# ----------------- CORS & CSRF -----------------CORS_ALLOW_CREDENTIALS = True
+# ----------------- CORS & CSRF -----------------
+
+CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://booking-venue-gamma.vercel.app", 
