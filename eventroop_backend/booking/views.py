@@ -14,7 +14,7 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = PageNumberPagination
     lookup_field = "pk"
 
-    queryset = Venue.objects.filter(is_deleted=False, is_active=True).order_by("-created_at")
+    queryset = Venue.objects.filter(is_deleted=False, is_active=True).order_by("id")
 
     filterset_fields = {
         "city": ["iexact", "icontains"],
