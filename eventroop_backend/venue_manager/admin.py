@@ -18,6 +18,7 @@ class PhotosAdmin(admin.ModelAdmin):
     readonly_fields = ['uploaded_at']
     list_select_related = ['content_type']
 
+
     def entity_object(self, obj):
         """Show linked model instance (Venue / Service / Resource)."""
         return str(obj.entity)
@@ -28,7 +29,7 @@ class PhotosAdmin(admin.ModelAdmin):
 @admin.register(Venue)
 class VenueAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'owner', 'manager', 'capacity', 'price_per_event', 
+        'name', 'owner', 'capacity', 'price_per_event', 
         'is_active', 'is_deleted', 'city'
     ]
     list_filter = [
@@ -37,7 +38,7 @@ class VenueAdmin(admin.ModelAdmin):
     ]
     search_fields = ['name', 'address','city' 'primary_contact', 'owner__email']
     readonly_fields = ['created_at', 'updated_at']
-    filter_horizontal = ['staff']
+    filter_horizontal = ['manager','staff']
     
     fieldsets = (
         ('Owner & Management', {
@@ -95,13 +96,14 @@ class VenueAdmin(admin.ModelAdmin):
     soft_delete_venues.short_description = "Soft delete selected venues"
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('owner', 'manager')
+        return super().get_queryset(request).select_related('owner')
+
 
 # ----------------------------- Service Admin -----------------------
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'owner', 'manager', 'primary_contact', 'venue', 
+        'name', 'owner', 'primary_contact', 'venue', 
         'is_active', 'created_at'
     ]
     list_filter = ['is_active', 'created_at']
@@ -147,13 +149,13 @@ class ServiceAdmin(admin.ModelAdmin):
     deactivate_services.short_description = "Deactivate selected services"
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('owner', 'manager', 'venue')
+        return super().get_queryset(request).select_related('owner')
 
 # ----------------------------- Resource Admin -----------------------
 @admin.register(Resource)
 class ResourceAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'owner', 'manager', 'total_quantity', 'available_quantity',
+        'name', 'owner', 'total_quantity', 'available_quantity',
         'rent_price_per_unit_per_day', 'is_active', 'created_at'
     ]
     list_filter = ['is_active', 'created_at']
@@ -203,4 +205,4 @@ class ResourceAdmin(admin.ModelAdmin):
     deactivate_resources.short_description = "Deactivate selected resources"
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('owner', 'manager', 'venue', 'service')
+        return super().get_queryset(request).select_related('owner','venue', 'service')

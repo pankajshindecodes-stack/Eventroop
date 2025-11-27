@@ -10,32 +10,26 @@ from accounts.models import CustomUser
 class PhotosSerializer(serializers.ModelSerializer):
     class Meta:
         model = Photos
-        fields = ["id", "image", "is_primary", "uploaded_at"]
+        fields = "__all__"
         read_only_fields = ["id", "uploaded_at"]
 
+class UserMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ["id", "first_name", "last_name", "email", "mobile_number", "user_type"]
 
 # --------------------------------------------------------
 # VENUE SERIALIZER
 # --------------------------------------------------------
 class VenueSerializer(serializers.ModelSerializer):
+    photos = PhotosSerializer(many=True, read_only=True)
 
-    owner = serializers.PrimaryKeyRelatedField(read_only=True)
+    owner = UserMiniSerializer(read_only=True)
 
-    manager = serializers.PrimaryKeyRelatedField(
-        queryset=CustomUser.objects.filter(
-            user_type__in=["VSRE_MANAGER", "LINE_MANAGER"]
-        ),
-        required=False,
-        allow_null=True
-    )
+    manager = UserMiniSerializer(many=True, read_only=True)
 
-    staff = serializers.PrimaryKeyRelatedField(
-        many=True,
-        queryset=CustomUser.objects.filter(user_type="VSRE_STAFF"),
-        required=False
-    )
+    staff = UserMiniSerializer(many=True, read_only=True)
 
-    photos_links = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Venue
@@ -48,7 +42,7 @@ class VenueSerializer(serializers.ModelSerializer):
             "parking_slots","external_decorators_allow", "external_caterers_allow",
             "amenities", "seating_arrangement",
             "is_active", "is_deleted",
-            "created_at", "updated_at","photos_links",
+            "created_at", "updated_at","photos",
         ]
         read_only_fields = ["is_deleted", "created_at", "updated_at"]
 
@@ -57,12 +51,8 @@ class VenueSerializer(serializers.ModelSerializer):
     # --------------------------------------------------------
     def create(self, validated_data):
         photos_data = self.context['request'].FILES.getlist('photos')
-        staff_data = validated_data.pop("staff", [])
 
         venue = Venue.objects.create(**validated_data)
-
-        if staff_data:
-            venue.staff.set(staff_data)
 
         if photos_data:
             ct = ContentType.objects.get_for_model(Venue)
@@ -86,13 +76,8 @@ class VenueSerializer(serializers.ModelSerializer):
     # --------------------------------------------------------
     def update(self, instance, validated_data):
         photos_data = self.context['request'].FILES.getlist('photos')
-        staff_data = validated_data.pop("staff", None)
 
         instance = super().update(instance, validated_data)
-
-        # Update staff
-        if staff_data is not None:
-            instance.staff.set(staff_data)
 
         # Update photos
         if photos_data:
@@ -113,11 +98,4 @@ class VenueSerializer(serializers.ModelSerializer):
 
         return instance
     
-
-    # --------------------------------------------------------
-    # GET PHOTO
-    # --------------------------------------------------------
-    def get_photos_links(self, obj):
-        photos = obj.photos.all()  # all photos
-        return PhotosSerializer(photos, many=True).data
-
+    

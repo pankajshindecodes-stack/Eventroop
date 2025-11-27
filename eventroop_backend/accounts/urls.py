@@ -9,7 +9,6 @@ router = routers.DefaultRouter()
 router.register(r'master-admin', MasterViewSet, basename='master-admin')
 router.register(r'vsre-manager', ManagerViewSet, basename='vsre-manager')
 router.register(r'vsre-staff', StaffViewSet, basename='vsre-staff')
-router.register(r'user-hierarchy', UserHierarchyViewSet, basename='user-hierarchy')
 router.register(r'pricing-models', PricingModelViewSet, basename='pricing-models')
 router.register(r'user-plans', UserPlanViewSet, basename='user-plans')
 
@@ -24,4 +23,6 @@ urlpatterns += [
     path('change-password/', ChangePasswordView.as_view()),
     path('token/refresh/', TokenRefreshView.as_view()),
     path('profile/', UserProfileView.as_view()),
+    path("assign/<user_id>/parent/", ParentAssignmentView.as_view()),
+    
 ]

@@ -8,7 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from eventroop_backend.pagination import StandardResultsSetPagination
-from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
 from .permissions import IsVSREOwner,IsCreator,IsVSREOwnerOrManager,IsMasterAdmin
 from .models import CustomUser, UserHierarchy, PricingModel, UserPlan
 from .serializers import *
@@ -201,8 +201,9 @@ class ManagerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return only managers created by this owner."""
         return CustomUser.objects.filter(
+            hierarchy__owner=self.request.user,
+            created_by=self.request.user,
             user_type=CustomUser.UserTypes.VSRE_MANAGER,
-            created_by=self.request.user
         )
 
     def perform_create(self, serializer):
@@ -212,72 +213,6 @@ class ManagerViewSet(viewsets.ModelViewSet):
             created_by=self.request.user
         )
 
-    @action(detail=True, methods=["get"], url_path="assignable-parents")
-    def get_assignable_parents(self, request, pk=None):
-
-        user = self.get_object()  # manager selected
-        owner = request.user      # authenticated owner
-
-        # all managers under same owner
-        all_managers = (
-            CustomUser.objects
-            .filter(
-                user_type=CustomUser.UserTypes.VSRE_MANAGER,
-                hierarchy__owner=owner
-            )
-            .exclude(id=user.id)
-            .select_related("hierarchy")
-        )
-
-        # exclude children (cycle prevention)
-        children_ids = user.subordinates.values_list("id", flat=True)
-        all_managers = all_managers.exclude(id__in=children_ids)
-
-        serializer = ManagerHierarchySerializer(all_managers, many=True)
-
-        return Response(serializer.data, status=200)
-    @action(detail=True, methods=["post"], url_path="assign")
-    def assign_manager_to_manager(self, request,pk=None):
-        user = self.get_object()   # manager we are modifying
-        parent_manager_id = request.data.get("parent_manager_id")
-
-        if not parent_manager_id:
-            return Response({"error": "parent_manager_id is required"}, status=400)
-
-        # validate parent
-        try:
-            new_parent_manager = CustomUser.objects.get(id=parent_manager_id)
-        except CustomUser.DoesNotExist:
-            return Response({"error": "Parent manager not found"}, status=404)
-
-        # Only manager can be parent
-        if new_parent_manager.user_type not in [
-            CustomUser.UserTypes.VSRE_MANAGER,
-            CustomUser.UserTypes.LINE_MANAGER,
-        ]:
-            return Response({"error": "Parent must be a manager"}, status=400)
-
-        # same owner?
-        if new_parent_manager.hierarchy.owner != user.hierarchy.owner:
-            return Response({"error": "Cannot assign to manager under another owner"}, status=400)
-
-        # No self-assigning
-        if new_parent_manager.id == user.id:
-            return Response({"error": "Cannot assign user to itself"}, status=400)
-
-        # Prevent cycle: cannot assign parent to its child
-        children_ids = user.subordinates.values_list("id", flat=True)
-        if new_parent_manager.id in children_ids:
-            return Response({"error": "Cannot assign a manager under its own subordinate"}, status=400)
-
-        # Update hierarchy
-        hierarchy = user.hierarchy
-        hierarchy.parent = new_parent_manager
-        hierarchy.owner = new_parent_manager.hierarchy.owner
-        hierarchy.save()
-
-        return Response(
-            status=status.HTTP_200_OK)
 
 
 class StaffViewSet(viewsets.ModelViewSet):
@@ -295,8 +230,9 @@ class StaffViewSet(viewsets.ModelViewSet):
         Return only staff created by the logged-in owner/manager.
         """
         return CustomUser.objects.filter(
+            created_by=self.request.user,
+            hierarchy__owner=self.request.user,
             user_type=CustomUser.UserTypes.VSRE_STAFF,
-            created_by=self.request.user
         )
 
     def perform_create(self, serializer):
@@ -308,90 +244,106 @@ class StaffViewSet(viewsets.ModelViewSet):
             created_by=self.request.user
         )
 
-    @action(detail=True, methods=["get"], url_path="assignable-parents")    
-    def get_assignable_parents(self, request, pk=None):
-        """
-        Return a list of staff under the same owner
-        excluding:
-        - the current staff
-        - its children (to avoid cycles)
-        """
-        user = self.get_object()  # staff selected
 
-        owner = request.user # autherized owner 
+class ParentAssignmentView(APIView):
+    """
+    GET    → Get current parent + assignable parents
+    POST   → Assign parent
+    DELETE → Remove parent
+    """
 
-        # all staff under the same owner
-        all_staff = CustomUser.objects.filter(
-            user_type =CustomUser.UserTypes.VSRE_STAFF,
-            hierarchy__owner=owner,
-        ).exclude(id=user.id)
+    def get(self, request, user_id=None):
+        try:
+            child = CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            child = request.user
+        # --------------------------
+        # CURRENT PARENT
+        # --------------------------
+        try:
+            hierarchy = child.hierarchy
+            parent = hierarchy.parent
 
-        # exclude direct children (simple cycle prevention)
-        children_ids = user.subordinates.values_list("id", flat=True)
-        all_staff = all_staff.exclude(id__in=children_ids)
+            current_parent = {
+                "id": parent.id,
+                "name": parent.get_full_name(),
+                "level": parent.hierarchy.level,
+            } if parent else None
 
-        data = [
+        except UserHierarchy.DoesNotExist:
+            current_parent = None
+
+        # --------------------------
+        # ASSIGNABLE PARENTS (Dropdown)
+        # --------------------------
+        managers = CustomUser.objects.filter(
+            hierarchy__owner=request.user,
+            user_type__in=["VSRE_MANAGER", "LINE_MANAGER","VSRE_STAFF"]
+        ).exclude(id__in=[user_id, parent.id])
+
+        assignable = [
             {
                 "id": m.id,
-                "name": f"{m.first_name} {m.last_name}",
-                "email": m.email,
+                "name": m.get_full_name(),
                 "level": m.hierarchy.level,
-                "parent_id": m.hierarchy.parent_id,
             }
-            for m in all_staff
+            for m in managers
         ]
 
-        return Response(data, status=200)
+        return Response({
+            "current_parent": current_parent,
+            "assignable_parents": assignable
+        })
 
-    @action(detail=True, methods=["post"], url_path="assign")
-    def assign_manager_to_manager(self, request,pk=None):
-        user = self.get_object()   # manager we are modifying
-        parent_manager_id = request.data.get("parent_manager_id")
+    # ---------------------------------------------------
+    def post(self, request, user_id):
+        """Assign a parent to a user"""
+        child = get_object_or_404(CustomUser, id=user_id)
+        parent_id = request.data.get("parent_id")
 
-        if not parent_manager_id:
-            return Response({"error": "parent_manager_id is required"}, status=400)
+        if not parent_id:
+            return Response({"error": "parent_id is required"}, status=400)
 
-        # validate parent
-        try:
-            new_parent_manager = CustomUser.objects.get(id=parent_manager_id)
-        except CustomUser.DoesNotExist:
-            return Response({"error": "Parent manager not found"}, status=404)
+        # Check valid parent
+        parent = get_object_or_404(
+            CustomUser,
+            id=parent_id,
+            user_type__in=["VSRE_MANAGER", "LINE_MANAGER"],
+        )
 
-        # Only manager can be parent
-        if new_parent_manager.user_type not in [
-            CustomUser.UserTypes.VSRE_MANAGER,
-            CustomUser.UserTypes.LINE_MANAGER,
-        ]:
-            return Response({"error": "Parent must be a manager"}, status=400)
+        hierarchy, _ = UserHierarchy.objects.get_or_create(
+            user=child,
+            defaults={"owner": request.user},
+        )
 
-        # same owner?
-        if new_parent_manager.hierarchy.owner != user.hierarchy.owner:
-            return Response({"error": "Cannot assign to manager under another owner"}, status=400)
+        # prevent circular assignment
+        if parent == child:
+            return Response({"error": "A user cannot be their own parent"}, status=400)
 
-        # No self-assigning
-        if new_parent_manager.id == user.id:
-            return Response({"error": "Cannot assign user to itself"}, status=400)
-
-        # Prevent cycle: cannot assign parent to its child
-        children_ids = user.subordinates.values_list("id", flat=True)
-        if new_parent_manager.id in children_ids:
-            return Response({"error": "Cannot assign a manager under its own subordinate"}, status=400)
-
-        # Update hierarchy
-        hierarchy = user.hierarchy
-        hierarchy.parent = new_parent_manager
-        hierarchy.owner = new_parent_manager.hierarchy.owner
+        hierarchy.parent = parent
         hierarchy.save()
 
-        return Response(
-            status=status.HTTP_200_OK)
+        return Response({
+            "message": "Parent assigned successfully",
+            "reports_to": {
+                "id": parent.id,
+                "name": parent.get_full_name(),
+                "level": parent.hierarchy.level,
+            },
+        })
 
-# ---------------------- UserHierarchy ViewSet ----------------------
-class UserHierarchyViewSet(viewsets.ModelViewSet):
-    queryset = UserHierarchy.objects.select_related("user", "parent", "owner")
-    serializer_class = UserHierarchySerializer
-    filterset_fields = ['owner', 'parent', 'level', 'band', 'department']
-    search_fields = ['user__email', 'owner__email', 'parent__email']
+    # ---------------------------------------------------
+    def delete(self, request, user_id):
+        """Unassign parent"""
+        child = get_object_or_404(CustomUser, id=user_id)
+
+        hierarchy = get_object_or_404(UserHierarchy, user=child)
+
+        hierarchy.parent = None
+        hierarchy.level = 0
+        hierarchy.save()
+
+        return Response({"message": "Parent removed"})
 
 
 # ---------------------- PricingModel ViewSet ----------------------
@@ -428,3 +380,4 @@ class UserPlanViewSet(viewsets.ModelViewSet):
             plan.end_date = plan.start_date + timezone.timedelta(days=plan.plan.duration_days)
         plan.save()
         return Response({"detail": "Plan activated."})
+

@@ -1,14 +1,16 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, views,status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
-
-from .permissions import VenueAccessPermission
+from django.shortcuts import get_object_or_404
+from .permissions import VenueAccessPermission,CanAssignUsers
 from .serializers import VenueSerializer, PhotosSerializer
 from accounts.models import CustomUser
-from .models import Venue, Photos
+from accounts.serializers import VenueMiniSerializer,ServiceMiniSerializer,ResourceMiniSerializer
+from .models import *
+from .validations import *
 
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
@@ -40,7 +42,6 @@ class VenueViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if user.is_owner:
-            print(Venue.objects.filter(owner=user, is_deleted=False))
             return Venue.objects.filter(owner=user, is_deleted=False)
 
         if user.is_manager:
@@ -67,79 +68,6 @@ class VenueViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         instance.soft_delete()
 
-    # --------------------------------------------------------
-    # ASSIGN MANAGER
-    # --------------------------------------------------------
-    @action(detail=True, methods=["post"], url_path="assign-manager")
-    def assign_manager(self, request, pk=None):
-        venue = self.get_object()
-        user = request.user
-
-        manager_id = request.data.get("manager_id")
-        if not manager_id:
-            return Response({"error": "manager_id is required"}, status=400)
-
-        try:
-            manager = CustomUser.objects.get(
-                id=manager_id,
-                user_type__in=["VSRE_MANAGER", "LINE_MANAGER"]
-            )
-        except CustomUser.DoesNotExist:
-            return Response({"error": "Manager not found"}, status=404)
-
-        # Owner can assign any manager under him
-        if user.is_owner:
-            if manager.owner != user:
-                return Response({"error": "Manager does not belong to you"}, status=status.HTTP_403_FORBIDDEN)
-
-        # Manager can only assign staff to HIS venue
-        elif user.is_manager:
-            if venue.manager_id != user.id:
-                return Response({"error": "You are not manager of this venue"}, status=status.HTTP_403_FORBIDDEN)
-        else:
-            return Response({"error": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
-
-        venue.manager = manager
-        venue.save()
-        return Response({"message": "Manager assigned successfully"})
-
-    # --------------------------------------------------------
-    # ASSIGN STAFF
-    # --------------------------------------------------------
-    @action(detail=True, methods=["post"], url_path="assign-staff")
-    def assign_staff(self, request, pk=None):
-        venue = self.get_object()
-        user = request.user
-        staff_ids = request.data.get("staff_ids", [])
-
-        if not isinstance(staff_ids, list):
-            return Response({"error": "staff_ids must be a list"}, status=status.HTTP_400_BAD_REQUEST)
-
-        staff_members = CustomUser.objects.filter(
-            id__in=staff_ids,
-            user_type="VSRE_STAFF"
-        )
-
-        # Owner: staff must belong to owner
-        if user.is_owner:
-            for s in staff_members:
-                if s.owner != user:
-                    return Response(
-                        {"error": f"Staff {s.id} does not belong to you"},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-
-        # Manager: can only assign staff to HIS venue
-        elif user.is_manager:
-            if venue.manager_id != user.id:
-                return Response({"error": "You are not manager of this venue"}, status=status.HTTP_403_FORBIDDEN)
-        else:
-            return Response({"error": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
-
-        venue.staff.set(staff_members)
-        venue.save()
-
-        return Response({"message": "Staff assigned successfully"})
 
     # --------------------------------------------------------
     # UPLOAD PHOTO
@@ -174,3 +102,107 @@ class VenueViewSet(viewsets.ModelViewSet):
         )
 
         return Response(PhotosSerializer(photo).data, status=status.HTTP_201_CREATED)
+
+class EntityAssignUsersAPI(views.APIView):
+    permission_classes = [IsAuthenticated, CanAssignUsers]
+
+    # ENTITY → (Model, MiniSerializer)
+    ENTITY_MODELS = {
+        "venue": (Venue, VenueMiniSerializer),
+        "service": (Service, ServiceMiniSerializer),
+        "resource": (Resource, ResourceMiniSerializer),
+    }
+
+    # -------------------------------------------------------
+    # POST → Assign managers + staff to entity
+    # -------------------------------------------------------
+    def post(self, request, entity_type, entity_id):
+        user = request.user
+
+        # Detect entity + serializer
+        meta = self.ENTITY_MODELS.get(entity_type)
+        if not meta:
+            return Response({"error": "Invalid entity type"}, status=400)
+
+        model, _ = meta
+
+        entity = get_object_or_404(model, id=entity_id)
+
+        # Extract data
+        manager_ids = request.data.get("manager_ids", [])
+        staff_ids = request.data.get("staff_ids", [])
+
+        # Pre-fetch
+        managers = CustomUser.objects.filter(
+            id__in=manager_ids,
+            user_type__in=["VSRE_MANAGER", "LINE_MANAGER"]
+        )
+
+        staff_members = CustomUser.objects.filter(
+            id__in=staff_ids,
+            user_type="VSRE_STAFF"
+        )
+
+        # Permission checks
+        try:
+            if user.is_owner:
+                validate_owner_permissions(user, managers, staff_members)
+
+            elif user.is_manager:
+                validate_manager_permissions(user, entity, manager_ids, staff_members)
+
+            else:
+                raise PermissionError("Not allowed")
+
+        except PermissionError as e:
+            return Response({"error": str(e)}, status=403)
+
+        # Assign managers
+        if manager_ids:
+            entity.managers.set(managers)
+
+            # Auto-assign staff under these managers
+            auto_staff = auto_assign_staff(manager_ids)
+            staff_members = (staff_members | auto_staff).distinct()
+
+        # Assign staff
+        entity.staff.set(staff_members)
+        entity.save()
+
+        return Response({
+            "message": f"Users assigned successfully to {entity_type}",
+            "entity_id": entity.id,
+            "assigned_managers": managers.values("id", "first_name", "last_name"),
+            "assigned_staff": staff_members.values("id", "first_name", "last_name"),
+        })
+
+    # -------------------------------------------------------
+    # GET → Show assigned + assignable entities for a user
+    # -------------------------------------------------------
+    def get(self, request, entity_type, entity_id):
+        request_user = request.user
+
+        # Detect entity + serializer
+        meta = self.ENTITY_MODELS.get(entity_type)
+        if not meta:
+            return Response({"error": "Invalid entity type"}, status=400)
+
+        model, MiniSerializer = meta
+
+        qs = model.objects.all().exclude(id=entity_id)
+
+        if request_user.is_owner:
+            qs = qs.filter(owner=request_user)
+
+        elif request_user.is_manager:
+            qs = qs.filter(managers=request_user)
+
+        else:
+            return Response({"error": "Not allowed"}, status=403)
+
+        assignable_data = MiniSerializer(qs, many=True).data
+
+        return Response({
+            "entity_type": entity_type,
+            "assignable_entities": assignable_data,
+        })

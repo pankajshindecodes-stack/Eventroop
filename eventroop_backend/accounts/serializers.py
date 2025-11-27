@@ -1,10 +1,26 @@
 # serializers.py
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.shortcuts import get_object_or_404
+
 from .models import CustomUser, UserHierarchy, PricingModel, UserPlan
+from venue_manager.models import Venue,Service,Resource
 
+# ---------------------- Entity mini Serializer ----------------------
+class VenueMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Venue
+        fields = ["id", "name", "city", "is_active"]
+class ServiceMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Service
+        fields = ["id", "name", "city", "is_active"]
+class ResourceMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resource
+        fields = ["id", "name", "city", "is_active"]
 
-
+# ------------------------------------------------------------------
 # ---------------------- User Profile Serializer ----------------------
 class BaseUserSerializer(serializers.ModelSerializer):
     """Base serializer for all user types with shared profile fields."""
@@ -47,8 +63,9 @@ class BaseUserSerializer(serializers.ModelSerializer):
     # ---------------------- Create ----------------------
     def create(self, validated_data):
         password = validated_data.pop("password", None)
+        profile_pic = validated_data.pop("profile_pic", None)
         validated_data.pop("confirm_password", None)
-
+        pr
         user = CustomUser(**validated_data)
         if password:
             user.set_password(password)
@@ -72,12 +89,18 @@ class BaseUserSerializer(serializers.ModelSerializer):
 # ---------------------- User Role Profile Serializer ----------------------
 class OwnerSerializer(BaseUserSerializer):
     """Serializer for VSRE Owners."""
+    owned_venues = VenueMiniSerializer(many=True, read_only=True)
+    owned_service = ServiceMiniSerializer(many=True, read_only=True)
+    owned_resoure = ResourceMiniSerializer(many=True, read_only=True)
+    
     class Meta(BaseUserSerializer.Meta):
-        fields = BaseUserSerializer.Meta.fields
+        fields = BaseUserSerializer.Meta.fields + ["owned_venues" "owned_service","owned_resoure"]
 
 class ManagerSerializer(BaseUserSerializer):
-    """Serializer for VSRE Managers."""
-    assigned_manager = serializers.SerializerMethodField()
+    reports_to = serializers.SerializerMethodField()
+    managed_venues = VenueMiniSerializer(many=True, read_only=True)
+    managed_service = ServiceMiniSerializer(many=True, read_only=True)
+    managed_resoure = ResourceMiniSerializer(many=True, read_only=True)
 
     class Meta(BaseUserSerializer.Meta):
         fields = BaseUserSerializer.Meta.fields + [
@@ -86,22 +109,39 @@ class ManagerSerializer(BaseUserSerializer):
             "skills",
             "qc_required",
             "last_working_day",
-            "assigned_manager",
+            "reports_to",
+            "managed_venues",
+            "managed_service",
+            "managed_resoure",
         ]
 
-    def get_assigned_manager(self, user):
-        try:
-            hierarchy = UserHierarchy.objects.get(user=user)
-        except UserHierarchy.DoesNotExist:
+    def get_reports_to(self, user):
+        hierarchy = getattr(user, "hierarchy", None)
+        if not hierarchy:
             return None
+
         parent = hierarchy.parent
-        if parent and parent.user_type == CustomUser.UserTypes.VSRE_MANAGER:
-            return parent.get_full_name()
-        return None
+        if not parent:
+            return None
+
+        parent_hierarchy = getattr(parent, "hierarchy", None)
+        parent_level = parent_hierarchy.level if parent_hierarchy else None
+
+        return {
+            "id": parent.id,
+            "name": parent.get_full_name(),
+            "level": parent_level
+        }
+
+
 
 class StaffSerializer(BaseUserSerializer):
     """Serializer for VSRE Staff."""
-    assigned_manager = serializers.SerializerMethodField()
+    reports_to = serializers.SerializerMethodField()
+    
+    assigned_venues = VenueMiniSerializer(many=True, read_only=True)
+    assigned_service = ServiceMiniSerializer(many=True, read_only=True)
+    assigned_resoure = ResourceMiniSerializer(many=True, read_only=True)
 
     class Meta(BaseUserSerializer.Meta):
         fields = BaseUserSerializer.Meta.fields + [
@@ -111,18 +151,30 @@ class StaffSerializer(BaseUserSerializer):
             "target_percent",
             "order_types",
             "last_working_day",
-            "assigned_manager"
+            "reports_to",
+            "assigned_venues",
+            "assigned_service",
+            "assigned_resoure",
         ]
     
-    def get_assigned_manager(self, user):
-        try:
-            hierarchy = UserHierarchy.objects.get(user=user)
-        except UserHierarchy.DoesNotExist:
+    def get_reports_to(self, user):
+        hierarchy = getattr(user, "hierarchy", None)
+        if not hierarchy:
             return None
+
         parent = hierarchy.parent
-        if parent and parent.user_type == CustomUser.UserTypes.VSRE_MANAGER:
-            return parent.get_full_name()
-        return None
+        if not parent:
+            return None
+
+        parent_hierarchy = getattr(parent, "hierarchy", None)
+        parent_level = parent_hierarchy.level if parent_hierarchy else None
+
+        return {
+            "id": parent.id,
+            "name": parent.get_full_name(),
+            "level": parent_level
+        }
+
 
 class CustomerSerializer(BaseUserSerializer):
     """Serializer for Customers"""

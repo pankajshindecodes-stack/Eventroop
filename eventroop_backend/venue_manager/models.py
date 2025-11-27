@@ -30,13 +30,11 @@ class Venue(models.Model):
     owner = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
-        related_name="venues",
+        related_name="own_venues",
         limit_choices_to={"user_type": "VSRE_OWNER"},
     )
-    manager = models.ForeignKey(
+    manager = models.ManyToManyField(
         CustomUser,
-        on_delete=models.SET_NULL,
-        null=True,
         blank=True,
         related_name="managed_venues",
         limit_choices_to={"user_type__in": ["VSRE_MANAGER", "LINE_MANAGER"]},
@@ -107,13 +105,11 @@ class Service(models.Model):
     owner = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
-        related_name="services",
+        related_name="own_services",
         limit_choices_to={"user_type": "VSRE_OWNER"},
     )
-    manager = models.ForeignKey(
+    manager = models.ManyToManyField(
         CustomUser,
-        on_delete=models.SET_NULL,
-        null=True,
         blank=True,
         related_name="managed_services",
         limit_choices_to={"user_type__in": ["VSRE_MANAGER", "LINE_MANAGER"]},
@@ -160,17 +156,16 @@ class Resource(models.Model):
     owner = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
-        related_name="resource",
+        related_name="own_resource",
         limit_choices_to={"user_type": "VSRE_OWNER"},
     )
-    manager = models.ForeignKey(
+    manager = models.ManyToManyField(
         CustomUser,
-        on_delete=models.SET_NULL,
-        null=True,
         blank=True,
-        related_name="managed_resource",
+        related_name="managed_resources",
         limit_choices_to={"user_type__in": ["VSRE_MANAGER", "LINE_MANAGER"]},
     )
+
     staff = models.ManyToManyField(
         CustomUser,
         related_name='assigned_resource',
