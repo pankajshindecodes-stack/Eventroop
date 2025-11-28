@@ -160,7 +160,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ----------------- FILE STORAGE (Local or Cloudinary) -----------------# settings.py
 
-if not DEBUG:
+if DEBUG:
     print("In local storage")
     # Local SQLite
     DATABASES = {
