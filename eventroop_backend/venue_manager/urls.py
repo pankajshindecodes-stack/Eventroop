@@ -6,6 +6,7 @@ app_name = 'venue_manager'
 
 router = DefaultRouter()
 router.register(r'venues', VenueViewSet, basename='venue')
+router.register(r'services', ServiceViewSet, basename='services')
 
 urlpatterns = [
     path('', include(router.urls)),

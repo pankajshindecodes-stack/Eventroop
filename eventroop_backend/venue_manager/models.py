@@ -27,6 +27,8 @@ class Photos(models.Model):
 class Venue(models.Model):
     # User Relationships
     photos = GenericRelation(Photos, related_query_name="venue_photos")
+    logo = models.ImageField(upload_to="logo_image/",null=True,blank=True)
+
     owner = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
@@ -97,10 +99,12 @@ class Venue(models.Model):
             models.Index(fields=['is_active', 'is_deleted']),
         ]
 
+
 # ----------------------------- Service -----------------------
 class Service(models.Model):
     """Caterers, Decorators, Photographers, etc."""
     photos = GenericRelation(Photos, related_query_name="service_photos")
+    logo = models.ImageField(upload_to="logo_image/",null=True,blank=True)
 
     owner = models.ForeignKey(
         CustomUser,
@@ -127,6 +131,7 @@ class Service(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     address = models.TextField()
+    city = models.CharField(max_length=100)
     primary_contact = models.CharField(max_length=15, unique=True)
     secondary_contact = models.CharField(max_length=15, unique=True, blank=True, null=True)
     website = models.URLField(max_length=500,blank=True,null=True,help_text="Official website")
@@ -134,8 +139,8 @@ class Service(models.Model):
     tags = models.JSONField(default=list, blank=True, null=True)
     quickInfo = models.JSONField(blank=True, null=True) # TODO: need to create separate model for this 
     is_active = models.BooleanField(default=True)
-
-
+    is_deleted = models.BooleanField(default=False)
+    
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

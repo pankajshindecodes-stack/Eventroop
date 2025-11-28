@@ -112,13 +112,6 @@ class UserProfileView(APIView):
 # ---------------------- User management ViewSet -------------------------
 
 class OwnerViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    Allows MASTER_ADMIN to:
-      - View all VSRE Owners
-      - See their Managers and Staff counts
-      - Retrieve full hierarchy for each owner
-    """
-
     serializer_class = OwnerSerializer
     pagination_class = StandardResultsSetPagination
     permission_classes = [IsAuthenticated]
@@ -137,14 +130,16 @@ class OwnerViewSet(viewsets.ReadOnlyModelViewSet):
         if request_user.is_owner:
             return queryset.filter(hierarchy__owner=request_user)
 
-    # ----------------------------------------------------------------------
-    # LIST: All Owners with summary counts
-    # ----------------------------------------------------------------------
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+    
     def perform_create(self, serializer):
         # create user first
         user = serializer.save(
             user_type=CustomUser.UserTypes.VSRE_OWNER,
-            context={'request': self.request.user}
+            
         )
         return user
     
@@ -228,11 +223,16 @@ class ManagerViewSet(viewsets.ModelViewSet):
         if request_user.is_manager:
             return queryset.filter(hierarchy__parent=request_user)
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
     def perform_create(self, serializer):
         # create user first
         user = serializer.save(
             user_type=CustomUser.UserTypes.VSRE_MANAGER,
-            context={'request': self.request.user}
+            
         )
         return user
 
@@ -256,13 +256,15 @@ class StaffViewSet(viewsets.ModelViewSet):
             hierarchy__owner=self.request.user,
             user_type=CustomUser.UserTypes.VSRE_STAFF,
         )
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
 
     def perform_create(self, serializer):
         # create user first
-        user = serializer.save(
-            user_type=CustomUser.UserTypes.VSRE_STAFF,
-            context={'request': self.request.user}
-        )
+        user = serializer.save(user_type=CustomUser.UserTypes.VSRE_STAFF)
         return user
 
 class ParentAssignmentView(APIView):

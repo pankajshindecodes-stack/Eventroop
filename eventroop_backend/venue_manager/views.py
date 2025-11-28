@@ -5,16 +5,19 @@ from rest_framework.response import Response
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
-from .permissions import VenueAccessPermission,CanAssignUsers
-from .serializers import VenueSerializer, PhotosSerializer
+from .permissions import EntityAccessPermission,CanAssignUsers
+from .serializers import *
 from accounts.models import CustomUser
 from accounts.serializers import VenueMiniSerializer,ServiceMiniSerializer,ResourceMiniSerializer
 from .models import *
 from .validations import *
 
+# --------------------------------------------------------
+# VENUE VIEWSET
+# --------------------------------------------------------
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
-    permission_classes = [IsAuthenticated, VenueAccessPermission]
+    permission_classes = [IsAuthenticated, EntityAccessPermission]
     filterset_fields = {
         "city": ["iexact", "icontains"],
         "is_active": ["exact"],
@@ -102,6 +105,64 @@ class VenueViewSet(viewsets.ModelViewSet):
         )
 
         return Response(PhotosSerializer(photo).data, status=status.HTTP_201_CREATED)
+
+# --------------------------------------------------------
+# SERVICE VIEWSET
+# --------------------------------------------------------
+class ServiceViewSet(viewsets.ModelViewSet):
+    serializer_class = ServiceSerializer
+    permission_classes = [IsAuthenticated, EntityAccessPermission]
+
+    filterset_fields = {
+        "is_active": ["exact"],
+        "venue": ["exact"],
+        "manager": ["exact"],
+        "staff": ["exact"],
+        # "tags": ["icontains"],
+    }
+
+    search_fields = [
+        "name",
+        "description",
+        "address",
+        "primary_contact",
+    ]
+
+    # --------------------------------------------------------
+    # FILTER SERVICES BASED ON ROLE
+    # --------------------------------------------------------
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.is_owner:
+            return Service.objects.filter(owner=user)
+
+        if user.is_manager:
+            return Service.objects.filter(manager=user)
+
+        if user.is_staff_role:
+            return Service.objects.filter(staff=user)
+
+        return Service.objects.none()
+
+    # --------------------------------------------------------
+    # CREATE WITH OWNER
+    # --------------------------------------------------------
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not user.is_owner:
+            raise PermissionDenied("Only owners can create services.")
+        serializer.save(owner=user, is_active=True)
+
+    # --------------------------------------------------------
+    # SOFT DELETE
+    # --------------------------------------------------------
+    def perform_destroy(self, instance):
+        if hasattr(instance, "soft_delete"):
+            instance.soft_delete()
+        else:
+            instance.delete()
+
 
 class EntityAssignUsersAPI(views.APIView):
     permission_classes = [IsAuthenticated, CanAssignUsers]

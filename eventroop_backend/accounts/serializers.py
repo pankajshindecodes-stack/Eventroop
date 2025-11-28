@@ -81,7 +81,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
         # ====================================================
         #  HIERARCHY CREATION ONLY FOR OWNER / MANAGER / STAFF
         # ====================================================
-        if any(user.is_owner, user.is_manager, user.is_vsre_Staff):
+        if any((user.is_owner, user.is_manager, user.is_vsre_staff)):
             # Determine owner
             if creator.is_superuser or creator.is_owner:
                 owner = creator
