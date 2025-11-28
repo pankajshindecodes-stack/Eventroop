@@ -9,7 +9,7 @@ router.register(r'venues', VenueViewSet, basename='venue')
 
 urlpatterns = [
     path('', include(router.urls)),
-    path("assign-users/<entity_type>/<entity_id>/",EntityAssignUsersAPI.as_view(),name="assign-users"),
+    path("assign-users/<entity_type>/",EntityAssignUsersAPI.as_view(),name="assign-users"),
 
 ]
 

@@ -37,62 +37,6 @@ def assign_group_to_user(sender, instance, created, **kwargs):
 #     call_command("create_default_groups")
 
 
-@receiver(post_save, sender=CustomUser)
-def create_hierarchy_for_new_user(sender, instance, created, **kwargs):
-    if not created:
-        return
-
-    # If hierarchy exists, skip
-    if hasattr(instance, "hierarchy"):
-        return
-
-    # Case: Owner → root
-    if instance.user_type == CustomUser.UserTypes.VSRE_OWNER:
-        UserHierarchy.objects.create(
-            user=instance,
-            parent=None,
-            owner=instance,  # owner is itself
-            level=0,
-        )
-        return
-
-    # -----------------------
-    # 1️⃣ Manual Parent Provided?
-    # -----------------------
-    parent_id = getattr(instance, "_assigned_parent_id", None)
-    if parent_id:
-        parent = CustomUser.objects.filter(id=parent_id).first()
-        if parent and hasattr(parent, "hierarchy"):
-            UserHierarchy.objects.create(
-                user=instance,
-                parent=parent,
-                owner=parent.hierarchy.owner,
-            )
-            return
-
-    # -----------------------
-    # 2️⃣ Fallback: created_by
-    # -----------------------
-    creator = instance.created_by
-    if creator and hasattr(creator, "hierarchy"):
-        UserHierarchy.objects.create(
-            user=instance,
-            parent=creator,
-            owner=creator.hierarchy.owner,
-        )
-        return
-
-    # -----------------------
-    # 3️⃣ No parent found → orphan user (rare)
-    # -----------------------
-    # Treat as root-level but NOT owner
-    UserHierarchy.objects.create(
-        user=instance,
-        parent=None,
-        owner=instance,  # or handle differently as per needs
-        level=0,
-    )
-    
 # ---------------------------
 # Auto generate Employee Id 
 # ---------------------------

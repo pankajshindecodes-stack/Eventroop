@@ -62,21 +62,48 @@ class BaseUserSerializer(serializers.ModelSerializer):
 
     # ---------------------- Create ----------------------
     def create(self, validated_data):
+        request = self.context["request"]
+        creator = request.user
+
+        # Remove unwanted fields
         password = validated_data.pop("password", None)
-        profile_pic = validated_data.pop("profile_pic", None)
         validated_data.pop("confirm_password", None)
-        pr
+
+        # Assign creator
+        validated_data["created_by"] = creator
+
+        # Create user
         user = CustomUser(**validated_data)
         if password:
             user.set_password(password)
         user.save()
+
+        # ====================================================
+        #  HIERARCHY CREATION ONLY FOR OWNER / MANAGER / STAFF
+        # ====================================================
+        if any(user.is_owner, user.is_manager, user.is_vsre_Staff):
+            # Determine owner
+            if creator.is_superuser or creator.is_owner:
+                owner = creator
+            else:
+                owner = creator.hierarchy.owner
+
+            UserHierarchy.objects.create(
+                user=user,
+                parent=owner,
+                owner=owner,
+            )
+
         return user
+
 
     # ---------------------- Update ----------------------
     def update(self, instance, validated_data):
+        request = self.context["request"]
         password = validated_data.pop("password", None)
         validated_data.pop("confirm_password", None)
 
+        # Normal updates
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
@@ -86,8 +113,9 @@ class BaseUserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+
 # ---------------------- User Role Profile Serializer ----------------------
-class OwnerSerializer(BaseUserSerializer):
+class OwnerSerializer(  ):
     """Serializer for VSRE Owners."""
     owned_venues = VenueMiniSerializer(many=True, read_only=True)
     owned_service = ServiceMiniSerializer(many=True, read_only=True)

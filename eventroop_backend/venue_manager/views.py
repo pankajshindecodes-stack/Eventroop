@@ -116,9 +116,9 @@ class EntityAssignUsersAPI(views.APIView):
     # -------------------------------------------------------
     # POST → Assign managers + staff to entity
     # -------------------------------------------------------
-    def post(self, request, entity_type, entity_id):
+    def post(self, request, entity_type):
         user = request.user
-
+        entity_id = request.data.get("entity_id", None)
         # Detect entity + serializer
         meta = self.ENTITY_MODELS.get(entity_type)
         if not meta:
@@ -137,7 +137,6 @@ class EntityAssignUsersAPI(views.APIView):
             id__in=manager_ids,
             user_type__in=["VSRE_MANAGER", "LINE_MANAGER"]
         )
-
         staff_members = CustomUser.objects.filter(
             id__in=staff_ids,
             user_type="VSRE_STAFF"
@@ -145,6 +144,7 @@ class EntityAssignUsersAPI(views.APIView):
 
         # Permission checks
         try:
+            validate_users_exist(manager_ids, staff_ids)
             if user.is_owner:
                 validate_owner_permissions(user, managers, staff_members)
 
@@ -159,7 +159,7 @@ class EntityAssignUsersAPI(views.APIView):
 
         # Assign managers
         if manager_ids:
-            entity.managers.set(managers)
+            entity.manager.set(managers)
 
             # Auto-assign staff under these managers
             auto_staff = auto_assign_staff(manager_ids)
@@ -179,7 +179,7 @@ class EntityAssignUsersAPI(views.APIView):
     # -------------------------------------------------------
     # GET → Show assigned + assignable entities for a user
     # -------------------------------------------------------
-    def get(self, request, entity_type, entity_id):
+    def get(self, request, entity_type):
         request_user = request.user
 
         # Detect entity + serializer
@@ -189,7 +189,7 @@ class EntityAssignUsersAPI(views.APIView):
 
         model, MiniSerializer = meta
 
-        qs = model.objects.all().exclude(id=entity_id)
+        qs = model.objects.filter(is_active=True)
 
         if request_user.is_owner:
             qs = qs.filter(owner=request_user)

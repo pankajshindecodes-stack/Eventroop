@@ -111,7 +111,7 @@ class UserProfileView(APIView):
 
 # ---------------------- User management ViewSet -------------------------
 
-class MasterViewSet(viewsets.ReadOnlyModelViewSet):
+class OwnerViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Allows MASTER_ADMIN to:
       - View all VSRE Owners
@@ -121,17 +121,33 @@ class MasterViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = OwnerSerializer
     pagination_class = StandardResultsSetPagination
-    permission_classes = [IsAuthenticated, IsMasterAdmin]
+    permission_classes = [IsAuthenticated]
     filterset_fields = ["is_active", "city"]
     search_fields = ["email", "first_name", "last_name", "mobile_number"]
 
+
     def get_queryset(self):
         """Fetch all VSRE Owners."""
-        return CustomUser.objects.owners().order_by("id")
+        request_user = self.request.user
+        queryset = CustomUser.objects.owners()
+        
+        if request_user.is_superuser:
+            return queryset
+        
+        if request_user.is_owner:
+            return queryset.filter(hierarchy__owner=request_user)
 
     # ----------------------------------------------------------------------
     # LIST: All Owners with summary counts
     # ----------------------------------------------------------------------
+    def perform_create(self, serializer):
+        # create user first
+        user = serializer.save(
+            user_type=CustomUser.UserTypes.VSRE_OWNER,
+            context={'request': self.request.user}
+        )
+        return user
+    
     def list(self, request, *args, **kwargs):
         owners = self.filter_queryset(self.get_queryset())
 
@@ -200,19 +216,25 @@ class ManagerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Return only managers created by this owner."""
-        return CustomUser.objects.filter(
-            hierarchy__owner=self.request.user,
-            created_by=self.request.user,
-            user_type=CustomUser.UserTypes.VSRE_MANAGER,
-        )
+        request_user = self.request.user
+        queryset = CustomUser.objects.managers()
+        
+        if request_user.is_superuser:
+            return queryset
+        
+        if request_user.is_owner:
+            return queryset.filter(hierarchy__owner=request_user)
+        
+        if request_user.is_manager:
+            return queryset.filter(hierarchy__parent=request_user)
 
     def perform_create(self, serializer):
-        """Auto-assign owner as creator."""
-        serializer.save(
+        # create user first
+        user = serializer.save(
             user_type=CustomUser.UserTypes.VSRE_MANAGER,
-            created_by=self.request.user
+            context={'request': self.request.user}
         )
-
+        return user
 
 
 class StaffViewSet(viewsets.ModelViewSet):
@@ -236,14 +258,12 @@ class StaffViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        """
-        Auto-assign creator and user type.
-        """
-        serializer.save(
+        # create user first
+        user = serializer.save(
             user_type=CustomUser.UserTypes.VSRE_STAFF,
-            created_by=self.request.user
+            context={'request': self.request.user}
         )
-
+        return user
 
 class ParentAssignmentView(APIView):
     """
@@ -278,7 +298,7 @@ class ParentAssignmentView(APIView):
         # --------------------------
         managers = CustomUser.objects.filter(
             hierarchy__owner=request.user,
-            user_type__in=["VSRE_MANAGER", "LINE_MANAGER","VSRE_STAFF"]
+            user_type__in=["VSRE_MANAGER", "LINE_MANAGER"]
         ).exclude(id__in=[user_id, parent.id])
 
         assignable = [

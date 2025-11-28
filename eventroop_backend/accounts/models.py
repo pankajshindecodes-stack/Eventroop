@@ -182,7 +182,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["mobile_number"]
 
-
     @property
     def is_owner(self):
         return self.user_type in [self.UserTypes.VSRE_OWNER, self.UserTypes.MASTER_ADMIN]
@@ -241,7 +240,8 @@ class UserHierarchy(models.Model):
     department = models.CharField(max_length=50, null=True, blank=True)
     band = models.CharField(max_length=20, blank=True, null=True)
     level = models.PositiveIntegerField(default=0, help_text="Hierarchy depth (Owner=0, Manager=1, etc.)")
-
+    
+    
     class Meta:
         verbose_name = "User Hierarchy"
         verbose_name_plural = "User Hierarchies"
