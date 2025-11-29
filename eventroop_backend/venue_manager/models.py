@@ -132,11 +132,12 @@ class Service(models.Model):
     address = models.TextField()
     city = models.CharField(max_length=100)
 
-    contact = models.CharField(max_length=15,)
+    contact = models.CharField(max_length=15,blank=True,null=True)
     website = models.URLField(max_length=500,blank=True,null=True)
 
-    tags = models.JSONField(default=list, blank=True, null=True)
-    quickInfo = models.JSONField(blank=True, null=True) # TODO: need to create separate model for this 
+    tags = models.JSONField(default=list)
+    quickInfo = models.JSONField(default=dict) # TODO: need to create separate model for this 
+    quickInfo = models.JSONField(default=dict) 
     is_active = models.BooleanField(default=True)
     is_deleted = models.BooleanField(default=False)
     
