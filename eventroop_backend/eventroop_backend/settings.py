@@ -89,9 +89,13 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 CSRF_COOKIE_HTTPONLY = False
 
-# ----------------- URLS & WSGI -----------------
+# ----------------- WSGI, ASGI & URLS -----------------
 ROOT_URLCONF = 'eventroop_backend.urls'
 WSGI_APPLICATION = 'eventroop_backend.wsgi.application'
+ASGI_APPLICATION = "eventroop_backend.asgi.application"
+
+
+
 
 # ----------------- TEMPLATES -----------------
 TEMPLATES = [
@@ -160,7 +164,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ----------------- FILE STORAGE (Local or Cloudinary) -----------------# settings.py
 
-if DEBUG:
+if not DEBUG:
     print("In local storage")
     # Local SQLite
     DATABASES = {
@@ -181,6 +185,15 @@ if DEBUG:
         "staticfiles": {
             "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
         },
+    }
+
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [("localhost", 6379)],
+            },
+        }
     }
 
 else:
