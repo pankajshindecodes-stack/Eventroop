@@ -36,8 +36,7 @@ class VenueSerializer(serializers.ModelSerializer):
         fields = [
             "id", "owner", "manager", "staff",
             "name", "description", "address","city",
-            "primary_contact", "secondary_contact",
-            "website", "social_links",
+            "contact", "website", "social_links",
             "capacity", "price_per_event", "rooms", "floors",
             "parking_slots","external_decorators_allow", "external_caterers_allow",
             "amenities", "seating_arrangement",
@@ -115,7 +114,7 @@ class ServiceSerializer(serializers.ModelSerializer):
         fields = [
             "id", "owner", "manager", "staff", "venue",
             "name", "description", "address","city",
-            "primary_contact", "secondary_contact",
+            "contact", "secondary_contact",
             "website", "tags", "quickInfo",
             "is_active",
             "created_at", "updated_at",

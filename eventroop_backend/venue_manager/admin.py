@@ -36,7 +36,7 @@ class VenueAdmin(admin.ModelAdmin):
         'city','is_active', 'is_deleted', 'external_decorators_allow', 
         'external_caterers_allow', 'created_at'
     ]
-    search_fields = ['name', 'address','city' 'primary_contact', 'owner__email']
+    search_fields = ['name', 'address','city' 'contact', 'owner__email']
     readonly_fields = ['created_at', 'updated_at']
     filter_horizontal = ['manager','staff']
     
@@ -47,8 +47,7 @@ class VenueAdmin(admin.ModelAdmin):
         ('Venue Details', {
             'fields': (
                 'name', 'description', 'address', 'city',
-                'primary_contact', 'secondary_contact',
-                'website', 'social_links'
+                'contact', 'website', 'social_links'
             )
         }),
         ('Capacity & Pricing', {
@@ -103,11 +102,11 @@ class VenueAdmin(admin.ModelAdmin):
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
     list_display = [
-        'name', 'owner', 'primary_contact', 'venue', 
+        'name', 'owner', 'contact', 'venue', 
         'is_active', 'created_at'
     ]
     list_filter = ['is_active', 'created_at']
-    search_fields = ['name', 'address', 'primary_contact', 'owner__email']
+    search_fields = ['name', 'address', 'contact', 'owner__email']
     readonly_fields = ['created_at', 'updated_at']
     filter_horizontal = ['staff']
     
@@ -118,8 +117,7 @@ class ServiceAdmin(admin.ModelAdmin):
         ('Service Details', {
             'fields': (
                 'name', 'description', 'address', 
-                'primary_contact', 'secondary_contact',
-                'website', 'tags', 'quickInfo'
+                'contact', 'website', 'tags', 'quickInfo'
             )
         }),
         ('Venue Relation', {

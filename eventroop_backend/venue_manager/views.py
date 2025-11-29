@@ -125,7 +125,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
         "name",
         "description",
         "address",
-        "primary_contact",
+        "contact",
     ]
 
     # --------------------------------------------------------

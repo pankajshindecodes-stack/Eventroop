@@ -31,7 +31,6 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
         "description",
         "address",
         "city",
-        "primary_contact",
-        "secondary_contact",
+        "contact",
     ]
 

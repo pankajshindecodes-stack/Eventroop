@@ -55,8 +55,7 @@ class Venue(models.Model):
     description = models.TextField(blank=True)
     address = models.TextField()
     city = models.CharField(max_length=200)
-    primary_contact = models.CharField(max_length=15, blank=True, null=True)
-    secondary_contact = models.CharField(max_length=15, blank=True, null=True)
+    contact = models.CharField(max_length=15, blank=True, null=True)
     website = models.URLField(max_length=500,blank=True,null=True,help_text="Official website ")
     social_links = models.JSONField(blank=True, null=True)
 
@@ -132,9 +131,9 @@ class Service(models.Model):
     description = models.TextField(blank=True)
     address = models.TextField()
     city = models.CharField(max_length=100)
-    primary_contact = models.CharField(max_length=15, unique=True)
-    secondary_contact = models.CharField(max_length=15, unique=True, blank=True, null=True)
-    website = models.URLField(max_length=500,blank=True,null=True,help_text="Official website")
+
+    contact = models.CharField(max_length=15,)
+    website = models.URLField(max_length=500,blank=True,null=True)
 
     tags = models.JSONField(default=list, blank=True, null=True)
     quickInfo = models.JSONField(blank=True, null=True) # TODO: need to create separate model for this 
