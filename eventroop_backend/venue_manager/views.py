@@ -140,7 +140,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
         if user.is_manager:
             return Service.objects.filter(manager=user)
 
-        if user.is_staff_role:
+        if user.is_staff_role: 
             return Service.objects.filter(staff=user)
 
         return Service.objects.none()
