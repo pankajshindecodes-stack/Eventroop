@@ -114,8 +114,7 @@ class ServiceSerializer(serializers.ModelSerializer):
         fields = [
             "id", "owner", "manager", "staff", "venue",
             "name", "description", "address","city",
-            "contact", "secondary_contact",
-            "website", "tags", "quickInfo",
+            "contact","website", "tags", "quickInfo",
             "is_active",
             "created_at", "updated_at",
             "photos","logo"
