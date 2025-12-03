@@ -144,7 +144,7 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = VenueSerializer
     permission_classes = [permissions.AllowAny]
-    pagination_class = StandardResultsSetPagination
+    
 
 
     lookup_field = "pk"
@@ -177,7 +177,7 @@ class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = ServiceSerializer
     permission_classes = [permissions.AllowAny]
-    pagination_class = StandardResultsSetPagination
+    
     filterset_class = EntityFilter
     lookup_field = "pk"
 

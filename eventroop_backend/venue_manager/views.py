@@ -1,8 +1,6 @@
 from rest_framework import viewsets, views,status
-from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from .permissions import EntityAccessPermission,CanAssignUsers
@@ -77,6 +75,7 @@ class VenueViewSet(viewsets.ModelViewSet):
 class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     permission_classes = [IsAuthenticated, EntityAccessPermission]
+    
 
     filterset_fields = {
         "is_active": ["exact"],

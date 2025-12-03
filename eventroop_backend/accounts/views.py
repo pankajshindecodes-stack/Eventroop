@@ -113,7 +113,7 @@ class UserProfileView(APIView):
 
 class OwnerViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OwnerSerializer
-    pagination_class = StandardResultsSetPagination
+    
     permission_classes = [IsAuthenticated]
     filterset_fields = ["is_active", "city"]
     search_fields = ["email", "first_name", "last_name", "mobile_number"]
@@ -204,7 +204,7 @@ class ManagerViewSet(viewsets.ModelViewSet):
     Allows VSRE_OWNER to manage their own VSRE_MANAGER users.
     """
     serializer_class = ManagerSerializer
-    pagination_class = StandardResultsSetPagination
+    
     permission_classes = [ IsVSREOwner, IsCreator]
     filterset_fields = ["is_active", "city"]
     search_fields = ["email", "first_name", "last_name", "mobile_number"]
@@ -242,7 +242,7 @@ class StaffViewSet(viewsets.ModelViewSet):
     Allows both VSRE_OWNER and VSRE_MANAGER to manage their own VSRE_STAFF users.
     """
     serializer_class = StaffSerializer
-    pagination_class = StandardResultsSetPagination
+    
     permission_classes = [IsCreator,IsVSREOwnerOrManager]
     filterset_fields = ["is_active", "city"]
     search_fields = ["email", "first_name", "last_name", "mobile_number"]
