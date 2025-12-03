@@ -117,7 +117,7 @@ class ServiceAdmin(admin.ModelAdmin):
         ('Service Details', {
             'fields': (
                 'name', 'description', 'address', 
-                'contact', 'website', 'tags', 'quickInfo'
+                'contact', 'website', 'tags', 'quick_info'
             )
         }),
         ('Venue Relation', {

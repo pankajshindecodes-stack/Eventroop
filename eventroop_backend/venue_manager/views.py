@@ -71,41 +71,6 @@ class VenueViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         instance.soft_delete()
 
-
-    # --------------------------------------------------------
-    # UPLOAD PHOTO
-    # --------------------------------------------------------
-    @action(detail=True, methods=["post"], url_path="upload-photo")
-    def upload_photo(self, request, pk=None):
-        venue = self.get_object()
-        image = request.FILES.get("image")
-        is_primary = request.data.get("is_primary", False)
-
-        if not image:
-            return Response({"error": "Image is required"}, status=400)
-
-        ct = ContentType.objects.get_for_model(Venue)
-
-        # If marking this as primary -> unset previous primary
-        if str(is_primary).lower() in ["true", "1", "yes"]:
-            is_primary = True
-            Photos.objects.filter(
-                content_type=ct,
-                object_id=venue.id,
-                is_primary=True
-            ).update(is_primary=False)
-        else:
-            is_primary = False
-
-        photo = Photos.objects.create(
-            image=image,
-            is_primary=is_primary,
-            content_type=ct,
-            object_id=venue.id
-        )
-
-        return Response(PhotosSerializer(photo).data, status=status.HTTP_201_CREATED)
-
 # --------------------------------------------------------
 # SERVICE VIEWSET
 # --------------------------------------------------------
@@ -135,13 +100,13 @@ class ServiceViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if user.is_owner:
-            return Service.objects.filter(owner=user)
+            return Service.objects.filter(owner=user, is_deleted=False)
 
         if user.is_manager:
-            return Service.objects.filter(manager=user)
+            return Service.objects.filter(manager=user, is_deleted=False)
 
         if user.is_staff_role: 
-            return Service.objects.filter(staff=user)
+            return Service.objects.filter(staff=user, is_deleted=False)
 
         return Service.objects.none()
 

@@ -88,8 +88,8 @@ class EntityFilter(filters.FilterSet):
     def filter_min_price(self, queryset, name, value):
         model = queryset.model
         
-        if hasattr(model, "quickInfo"):  # Service
-            return queryset.filter(quickInfo__starting_price__gte=value)
+        if hasattr(model, "quick_info"):  # Service
+            return queryset.filter(quick_info__starting_price__gte=value)
 
         if hasattr(model, "price_per_event"):  # Venue
             return queryset.filter(price_per_event__gte=value)
@@ -102,8 +102,8 @@ class EntityFilter(filters.FilterSet):
     def filter_max_price(self, queryset, name, value):
         model = queryset.model
         
-        if hasattr(model, "quickInfo"):
-            return queryset.filter(quickInfo__starting_price__lte=value)
+        if hasattr(model, "quick_info"):
+            return queryset.filter(quick_info__starting_price__lte=value)
 
         if hasattr(model, "price_per_event"):
             return queryset.filter(price_per_event__lte=value)
@@ -202,5 +202,5 @@ class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
         "contact",
         "website",
         "tags",
-        "quickInfo"
+        "quick_info"
     ]

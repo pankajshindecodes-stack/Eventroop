@@ -136,7 +136,7 @@ class Service(models.Model):
     website = models.URLField(max_length=500,blank=True,null=True)
 
     tags = models.JSONField(default=list)
-    quickInfo = models.JSONField(default=dict) 
+    quick_info = models.JSONField(default=dict) 
     is_active = models.BooleanField(default=True)
     is_deleted = models.BooleanField(default=False)
     
