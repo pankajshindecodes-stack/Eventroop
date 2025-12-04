@@ -32,6 +32,16 @@ class IsVSREOwnerOrManager(BasePermission):
             request.user.is_manager or request.user.is_owner 
         )
 
+
+class IsMasterAdminOrOwner(BasePermission):
+    """Allow both VSRE_OWNER and VSRE_MANAGER."""
+
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated and
+            request.user.is_superuser or request.user.is_owner 
+        )
+
 class IsCreator(BasePermission):
     """Allow access only to objects created by the user."""
 

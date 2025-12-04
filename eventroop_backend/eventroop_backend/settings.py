@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'accounts',
     'venue_manager',
     'booking',
+    "attendance",
 ]
 
 # ----------------- MIDDLEWARE -----------------
@@ -122,7 +123,7 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # ----------------- PASSWORD VALIDATION -----------------
-if not DEBUG:
+if DEBUG:
     AUTH_PASSWORD_VALIDATORS = [
         {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
         {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

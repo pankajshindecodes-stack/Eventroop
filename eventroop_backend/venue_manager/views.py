@@ -67,7 +67,10 @@ class VenueViewSet(viewsets.ModelViewSet):
     # SOFT DELETE
     # --------------------------------------------------------
     def perform_destroy(self, instance):
-        instance.soft_delete()
+        if hasattr(instance, "soft_delete"):
+            instance.soft_delete()
+        else:
+            instance.delete()
 
 # --------------------------------------------------------
 # SERVICE VIEWSET
