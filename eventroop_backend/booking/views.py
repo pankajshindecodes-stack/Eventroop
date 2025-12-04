@@ -1,8 +1,7 @@
 from venue_manager.models import Venue,Service
-from .serializers import VenueSerializer,ServiceSerializer
 from rest_framework import viewsets, permissions
-from eventroop_backend.pagination import StandardResultsSetPagination
-
+from .serializers import*
+from .models import Patient
 from django_filters import rest_framework as filters
 from django.db.models import Q
 
@@ -204,3 +203,26 @@ class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
         "tags",
         "quick_info"
     ]
+
+
+
+class PatientViewSet(viewsets.ModelViewSet):
+    queryset = Patient.objects.all()
+    serializer_class = PatientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Owner → return all patient data
+        if user.is_owner:
+            return Patient.objects.filter(registered_by__hierarchy__owner=user)
+
+        # Manager/Staff → only their own patients
+        return Patient.objects.filter(registered_by=user)
+
+    def perform_create(self, serializer):
+        """
+        Set registered_by = request.user automatically
+        """
+        serializer.save(registered_by=self.request.user)

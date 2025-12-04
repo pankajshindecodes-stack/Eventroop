@@ -7,13 +7,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
 from .models import AttendanceStatus, Attendance
-from accounts.permissions import IsMasterAdminOrOwner
+from .permissions import IsVSREOwnerOrReadOnlyForTeam
 
 
 class AttendanceStatusViewSet(ModelViewSet):
     queryset = AttendanceStatus.objects.all()
     serializer_class = AttendanceStatusSerializer
-    permission_classes = [IsAuthenticated, IsMasterAdminOrOwner]
+    permission_classes = [IsAuthenticated,IsVSREOwnerOrReadOnlyForTeam]
 
     def get_queryset(self):
         user = self.request.user
