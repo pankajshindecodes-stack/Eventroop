@@ -19,8 +19,12 @@ class AttendanceStatusViewSet(ModelViewSet):
         user = self.request.user
         if user.is_superuser:
             return AttendanceStatus.objects.all()
-        # Owner sees only their own statuses
-        return AttendanceStatus.objects.filter(owner=user)
+        
+        if user.is_owner:
+            return AttendanceStatus.objects.filter(owner=user)
+
+        return AttendanceStatus.objects.filter(owner=user.hierarchy.owner)
+        
 
     def perform_create(self, serializer):
         user = self.request.user
