@@ -150,7 +150,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         ("N", "Prefer not to say"),
     ]
     profile_pic = models.ImageField(upload_to="profile_photos/",null=True,blank=True,)
-
+    verified_document = models.FileField(upload_to='staff_document/', null=True, blank=True)
     employee_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
     email = models.EmailField(unique=True)
     mobile_number = models.CharField(max_length=15, unique=True)

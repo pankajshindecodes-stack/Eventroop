@@ -71,7 +71,7 @@ class Patient(models.Model):
         related_name='registered_patients',
         help_text="User who registered this patient"
     )
-    
+    patient_documents = models.FileField(upload_to='patient_documents/',help_text="Upload related document")
 
     # Basic Information
     first_name = models.CharField(max_length=100)

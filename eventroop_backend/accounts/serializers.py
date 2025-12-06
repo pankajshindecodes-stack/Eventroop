@@ -33,6 +33,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "profile_pic",
+            "verified_document",
             "first_name",
             "middle_name",
             "last_name",
