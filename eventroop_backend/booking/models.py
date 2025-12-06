@@ -71,7 +71,6 @@ class Patient(models.Model):
         related_name='registered_patients',
         help_text="User who registered this patient"
     )
-    patient_documents = models.FileField(upload_to='patient_documents/',help_text="Upload related document")
 
     # Basic Information
     first_name = models.CharField(max_length=100)
@@ -109,6 +108,7 @@ class Patient(models.Model):
     # Identification
     id_proof = models.CharField(max_length=20, choices=ID_PROOF_CHOICES)
     id_proof_number = models.CharField(max_length=50)
+    patient_documents = models.FileField(upload_to='patient_documents/',help_text="Upload related document")
     
     # Professional Background
     education_qualifications = models.TextField(blank=True)
