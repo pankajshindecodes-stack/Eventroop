@@ -67,10 +67,11 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1",
     "http://localhost:5173",
     "https://*.vercel.app",
+    "https://eventroop.vercel.app",
+    "https://eventroop-dev.vercel.app",
     "https://vaishnavimedicare.com",
     "https://valueoccasions.com",
 ]
-
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SESSION_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_SAMESITE = 'None'
