@@ -114,6 +114,11 @@ TEMPLATES = [
     },
 ]
 
+# ----------------- WSGI/ASGI -----------------
+ROOT_URLCONF = 'eventroop_backend.urls'
+WSGI_APPLICATION = 'eventroop_backend.wsgi.application'
+ASGI_APPLICATION = "eventroop_backend.asgi.application"
+
 # ----------------- AUTH -----------------
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
