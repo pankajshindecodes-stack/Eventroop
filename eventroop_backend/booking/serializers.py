@@ -20,8 +20,8 @@ class ServiceSerializer(serializers.ModelSerializer):
         
 
 class PatientSerializer(serializers.ModelSerializer):
-    name_registered_by = serializers.CharField(source="registered_by.get_full_name")
+    name_registered_by = serializers.CharField(source="registered_by.get_full_name",read_only=True)
     class Meta:
         model = Patient
         fields = '__all__'
-        read_only_fields = ['id', 'registered_by','name_registered_by' 'registration_date', 'updated_at']
+        read_only_fields = ['id','name_registered_by', 'registered_by', 'registration_date', 'updated_at']
