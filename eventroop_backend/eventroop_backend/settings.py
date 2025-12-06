@@ -68,7 +68,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "https://*.vercel.app",
     "https://eventroop.vercel.app",
-    "https://eventroop-git-dev-eventroops-projects.vercel.app",
+    "https://eventroop-dev.vercel.app",
     "https://vaishnavimedicare.com",
     "https://valueoccasions.com",
 ]
