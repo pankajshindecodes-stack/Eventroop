@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'venue_manager',
     'booking',
     "attendance",
+    "payroll",
 ]
 
 # ----------------- MIDDLEWARE -----------------

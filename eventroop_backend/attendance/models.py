@@ -44,6 +44,7 @@ class Attendance(models.Model):
     )
 
     date = models.DateField(default=timezone.now)
+    duration = models.DurationField(null=True, blank=True)
 
     status = models.ForeignKey(
         AttendanceStatus,

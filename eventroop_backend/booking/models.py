@@ -141,8 +141,7 @@ class Patient(models.Model):
     # Metadata
     registration_date = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    is_active = models.BooleanField(default=True)
-    
+        
     class Meta:
         ordering = ['-registration_date']
         verbose_name = 'Patient'

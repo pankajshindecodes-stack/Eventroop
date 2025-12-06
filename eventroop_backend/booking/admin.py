@@ -13,7 +13,6 @@ class PatientAdmin(admin.ModelAdmin):
         'blood_group',
         'registered_by',
         'registration_date',
-        'is_active',
     )
 
     list_filter = (
@@ -21,7 +20,6 @@ class PatientAdmin(admin.ModelAdmin):
         'blood_group',
         'id_proof',
         'payment_mode',
-        'is_active',
         'registered_by',
         'registration_date',
     )
