@@ -61,26 +61,31 @@ MIDDLEWARE = [
 # ----------------- CORS & CSRF -----------------
 
 CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOWED_ORIGINS = [
-    "https://booking-venue-gamma.vercel.app", 
-    "https://booking-venue-three.vercel.app", 
-    "https://vaishnavimedicare.com",
-    "https://valueoccasions.com",
-    "http://localhost:5173",
-    "http://127.0.0.1:8000",
-]
+CORS_ALLOW_ALL_ORIGINS = True
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://*.vercel.app",
-    "https://*.up.railway.app",
-    "https://vaishnavimedicare.com",
-    "https://valueoccasions.com",
-    "http://localhost",
-    "http://127.0.0.1",
-    "http://localhost:5173",
-    "http://127.0.0.1:8000",
+    "http://*",
+    "https://*",
 ]
+
+# CORS_ALLOWED_ORIGINS = [
+#     "https://booking-venue-gamma.vercel.app", 
+#     "https://booking-venue-three.vercel.app", 
+#     "https://vaishnavimedicare.com",
+#     "https://valueoccasions.com",
+#     "http://localhost:5173",
+#     "http://127.0.0.1:8000",
+# ]
+
+# CSRF_TRUSTED_ORIGINS = [
+#     "https://*.vercel.app",
+#     "https://vaishnavimedicare.com",
+#     "https://valueoccasions.com",
+#     "http://localhost",
+#     "http://127.0.0.1",
+#     "http://localhost:5173",
+#     "http://127.0.0.1:8000",
+# ]
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SESSION_COOKIE_SAMESITE = 'None'
