@@ -47,9 +47,9 @@ INSTALLED_APPS = [
 
 # ----------------- MIDDLEWARE -----------------
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -57,34 +57,45 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
-# ----------------- CORS & CSRF -----------------
+# -------------------- CORS SETTINGS --------------------
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = True       # SAFE because CSRF protects stateful operations
+CORS_ALLOW_HEADERS = ["*"]
+CORS_ALLOW_METHODS = ["*"]
+
+# -------------------- CSRF SETTINGS --------------------
+
 CSRF_TRUSTED_ORIGINS = [
+    # Local development
     "http://localhost",
+    "http://localhost:5173",
     "http://127.0.0.1",
-    "https://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8000",
+
+    # Vercel Preview & Dev (wildcard OK!)
     "https://*.vercel.app",
+
+    # Production domains
     "https://vaishnavimedicare.com",
     "https://valueoccasions.com",
 ]
 
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SESSION_COOKIE_SAMESITE = 'None'
-CSRF_COOKIE_SAMESITE = 'None'
+# -------------------- COOKIE SETTINGS --------------------
 
+# Required on Vercel (HTTPS)
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+
+SESSION_COOKIE_SAMESITE = "None"
+CSRF_COOKIE_SAMESITE = "None"
+
+# Allow JS read/write CSRF cookie (React/Vite uses it)
 CSRF_COOKIE_HTTPONLY = False
 
-# ----------------- WSGI, ASGI & URLS -----------------
-ROOT_URLCONF = 'eventroop_backend.urls'
-WSGI_APPLICATION = 'eventroop_backend.wsgi.application'
-ASGI_APPLICATION = "eventroop_backend.asgi.application"
-
-
+# Needed for Vercel / reverse proxies
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
 # ----------------- TEMPLATES -----------------
