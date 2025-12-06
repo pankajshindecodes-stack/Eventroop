@@ -71,6 +71,7 @@ class Patient(models.Model):
         related_name='registered_patients',
         help_text="User who registered this patient"
     )
+    
 
     # Basic Information
     first_name = models.CharField(max_length=100)
@@ -118,7 +119,7 @@ class Patient(models.Model):
         validators=[MinValueValidator(1950), MaxValueValidator(timezone.now().year)]
     )
     
-    # Payment Information
+    # Payment Information Todo
     registration_fee = models.DecimalField(
         max_digits=10,
         decimal_places=2,

@@ -115,14 +115,14 @@ class BaseUserSerializer(serializers.ModelSerializer):
 
 
 # ---------------------- User Role Profile Serializer ----------------------
-class OwnerSerializer(  ):
+class OwnerSerializer(BaseUserSerializer):
     """Serializer for VSRE Owners."""
     owned_venues = VenueMiniSerializer(many=True, read_only=True)
     owned_service = ServiceMiniSerializer(many=True, read_only=True)
     owned_resoure = ResourceMiniSerializer(many=True, read_only=True)
     
     class Meta(BaseUserSerializer.Meta):
-        fields = BaseUserSerializer.Meta.fields + ["owned_venues" "owned_service","owned_resoure"]
+        fields = BaseUserSerializer.Meta.fields + ["owned_venues", "owned_service","owned_resoure"]
 
 class ManagerSerializer(BaseUserSerializer):
     reports_to = serializers.SerializerMethodField()

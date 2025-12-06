@@ -85,25 +85,27 @@ class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self, user):
-        role = user.user_type
-        if role == CustomUser.UserTypes.VSRE_OWNER:
+        if user.is_owner:
             return OwnerSerializer
-        elif role == CustomUser.UserTypes.VSRE_MANAGER:
+        elif user.is_manager:
             return ManagerSerializer
-        elif role == CustomUser.UserTypes.VSRE_STAFF:
+        elif user.is_vsre_staff:
             return StaffSerializer
-        elif role == CustomUser.UserTypes.CUSTOMER:
-            return CustomerSerializer
-        return BaseUserSerializer  # fallback
-
+        return CustomerSerializer
+    
     def get(self, request):
         serializer_class = self.get_serializer_class(request.user)
-        serializer = serializer_class(request.user)
+        serializer = serializer_class(instance=request.user, context={'request': request})
         return Response(serializer.data)
 
     def put(self, request):
         serializer_class = self.get_serializer_class(request.user)
-        serializer = serializer_class(request.user, data=request.data, partial=True)
+        serializer = serializer_class(
+            instance=request.user,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
