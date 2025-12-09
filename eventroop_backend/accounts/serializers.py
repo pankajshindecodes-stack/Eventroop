@@ -70,7 +70,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
         validated_data.pop("confirm_password", None)
 
         # Assign creator
-        validated_data["created_by"] = creator
+        validated_data["created_by"] = None
 
         # Create user
         user = CustomUser(**validated_data)
