@@ -70,7 +70,8 @@ class BaseUserSerializer(serializers.ModelSerializer):
         validated_data.pop("confirm_password", None)
 
         # Assign creator
-        validated_data["created_by"] = None
+        if any((creator.is_owner, creator.is_manager)):
+            validated_data["created_by"] = creator
 
         # Create user
         user = CustomUser(**validated_data)
@@ -83,7 +84,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
         # ====================================================
         if any((user.is_owner, user.is_manager, user.is_vsre_staff)):
             # Determine owner
-            if creator.is_superuser or creator.is_owner:
+            if creator.is_superuser or creator.is_owner or creator.is_manager:
                 owner = creator
             else:
                 owner = creator.hierarchy.owner
