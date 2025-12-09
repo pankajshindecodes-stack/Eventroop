@@ -61,7 +61,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Passwords do not match.")
         return data
 
-    # ---------------------- Create ----------------------
+# ---------------------- Create ----------------------
     def create(self, validated_data):
         request = self.context["request"]
         creator = request.user
@@ -71,7 +71,8 @@ class BaseUserSerializer(serializers.ModelSerializer):
         validated_data.pop("confirm_password", None)
 
         # Assign creator
-        validated_data["created_by"] = None
+        if any((creator.is_owner, creator.is_manager)):
+            validated_data["created_by"] = creator
 
         # Create user
         user = CustomUser(**validated_data)
@@ -96,8 +97,6 @@ class BaseUserSerializer(serializers.ModelSerializer):
             )
 
         return user
-
-
     # ---------------------- Update ----------------------
     def update(self, instance, validated_data):
         request = self.context["request"]
