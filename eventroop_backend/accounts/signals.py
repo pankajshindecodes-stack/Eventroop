@@ -4,6 +4,7 @@ from django.contrib.auth.models import Group
 from django.dispatch import receiver
 from django.utils import timezone
 from .models import CustomUser,UserHierarchy
+from django.db import transaction
 
 
 # ---------------------------
@@ -42,6 +43,11 @@ def assign_group_to_user(sender, instance, created, **kwargs):
 # ---------------------------
 @receiver(post_save, sender=CustomUser)
 def generate_employee_id(sender, instance, created, **kwargs):
+    """
+    Generate a unique employee ID in format:
+    PREFIX-YYYY-OWNER_ID-UNIQUE_SEQUENCE
+    Example: VSRE-M-2025-001-0001
+    """
     if created and not instance.employee_id:
         # Map each user type to a short prefix
         prefix_map = {
@@ -50,26 +56,46 @@ def generate_employee_id(sender, instance, created, **kwargs):
             "VSRE_STAFF": "VSRE-S",
         }
 
-        prefix = prefix_map.get(instance.user_type,None)
-        year = timezone.now().year
+        prefix = prefix_map.get(instance.user_type, None)
         
+        # Return early if user type not in map
         if not prefix:
             return
+
+        year = timezone.now().year
+        owner_id = instance.created_by.id if instance.created_by else 999
         
-        # Count how many existing users have this type (for sequential numbering)        
-        count = (
-            CustomUser.objects.filter(
-                created_by=instance.created_by, # filter only same owner
-                user_type=instance.user_type    # filter same user_type
+        # Use transaction to ensure atomicity and prevent race conditions
+        with transaction.atomic():
+            # Get the highest sequence number for this specific combination
+            # (prefix + year + owner + user_type)
+            latest_user = (
+                CustomUser.objects
+                .filter(
+                    created_by=instance.created_by,
+                    user_type=instance.user_type,
+                )
+                .exclude(employee_id__isnull=True)
+                .order_by("id")
+                .last()
             )
-            .exclude(employee_id__isnull=True)
-            .count()
-            + 1
-        )
 
-        # Create ID format: PREFIX-YEAR-XXX
+            # Extract sequence number from latest employee_id and increment
+            if latest_user and latest_user.employee_id:
+                try:
+                    # Parse: PREFIX-YYYY-OWNER_ID-SEQUENCE
+                    parts = latest_user.employee_id.split("-")
+                    last_sequence = int(parts[-1])
+                    next_sequence = last_sequence + 1
+                except (ValueError, IndexError):
+                    next_sequence = 1
+            else:
+                next_sequence = 1
 
-        instance.employee_id = f"{prefix}-{year}-{instance.created_by.id:03d}-{count:03d}"
+            # Create ID format: PREFIX-YYYY-OWNER_ID-SEQUENCE (4 digits)
+            instance.employee_id = (
+                f"{prefix}-{year}-{owner_id:03d}-{next_sequence:04d}"
+            )
 
-        # Save again without triggering another signal loop
-        instance.save(update_fields=["employee_id"])
+            # Save again without triggering another signal loop
+            instance.save(update_fields=["employee_id"])
