@@ -234,6 +234,7 @@ class CustomUserAdmin(BaseUserAdmin):
                     "order_types",
                     "target_percent",
                     "qc_required",
+                    "verified_document"
                 ),
                 "classes": ("collapse",)
             },

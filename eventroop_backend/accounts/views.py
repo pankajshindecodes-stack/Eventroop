@@ -112,7 +112,6 @@ class UserProfileView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # ---------------------- User management ViewSet -------------------------
-
 class OwnerViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OwnerSerializer
     
@@ -200,7 +199,6 @@ class OwnerViewSet(viewsets.ReadOnlyModelViewSet):
 
         return Response(data)
 
-
 class ManagerViewSet(viewsets.ModelViewSet):
     """
     Allows VSRE_OWNER to manage their own VSRE_MANAGER users.
@@ -224,7 +222,12 @@ class ManagerViewSet(viewsets.ModelViewSet):
         
         if request_user.is_manager:
             return queryset.filter(hierarchy__parent=request_user)
-
+        
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ManagerListSerializer
+        return ManagerSerializer
+       
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["request"] = self.request
@@ -237,7 +240,6 @@ class ManagerViewSet(viewsets.ModelViewSet):
             
         )
         return user
-
 
 class StaffViewSet(viewsets.ModelViewSet):
     """
@@ -258,6 +260,10 @@ class StaffViewSet(viewsets.ModelViewSet):
             hierarchy__owner=self.request.user,
             user_type=CustomUser.UserTypes.VSRE_STAFF,
         )
+    def get_serializer_class(self):
+        if self.action == "list":
+            return StaffListSerializer
+        return StaffSerializer
     
     def get_serializer_context(self):
         context = super().get_serializer_context()
