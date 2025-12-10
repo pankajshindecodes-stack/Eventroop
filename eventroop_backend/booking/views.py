@@ -3,6 +3,7 @@ from rest_framework import viewsets, permissions
 from .serializers import*
 from .models import Patient
 from .filters import EntityFilter
+from django.db.models import Q
 
 class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -73,8 +74,6 @@ class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
         "quick_info"
     ]
 
-
-
 class PatientViewSet(viewsets.ModelViewSet):
     queryset = Patient.objects.all()
     serializer_class = PatientSerializer
@@ -85,7 +84,11 @@ class PatientViewSet(viewsets.ModelViewSet):
 
         # Owner → return all patient data
         if user.is_owner:
-            return Patient.objects.filter(registered_by__hierarchy__owner=user)
+            return Patient.objects.filter(
+                Q(registered_by__hierarchy__owner=user) |
+                Q(registered_by=user)
+            )
+
 
         # Manager/Staff → only their own patients
         return Patient.objects.filter(registered_by=user)
