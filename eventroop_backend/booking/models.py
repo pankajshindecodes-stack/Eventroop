@@ -119,7 +119,8 @@ class Patient(models.Model):
         validators=[MinValueValidator(1950), MaxValueValidator(timezone.now().year)]
     )
     
-    # Payment Information Todo
+    # Payment Information 
+    # TODO: need to move in payment table
     registration_fee = models.DecimalField(
         max_digits=10,
         decimal_places=2,
