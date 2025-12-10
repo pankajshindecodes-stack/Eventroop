@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from accounts.models import CustomUser
 
@@ -92,18 +93,18 @@ class Patient(models.Model):
     emergency_contact = models.CharField(max_length=100)
     emergency_phone = models.CharField(max_length=10, validators=[phone_regex])
     
-    emergency_contact_2 = models.CharField(max_length=100, blank=True)
-    emergency_phone_2 = models.CharField(max_length=10, blank=True, validators=[phone_regex])
+    emergency_contact_2 = models.CharField(max_length=100,null=True, blank=True)
+    emergency_phone_2 = models.CharField(max_length=10,null=True, blank=True, validators=[phone_regex])
     
     # Medical Information
-    medical_conditions = models.TextField(blank=True)
-    allergies = models.TextField(blank=True)
-    present_health_condition = models.TextField(blank=True)
+    medical_conditions = models.TextField(null=True,blank=True)
+    allergies = models.TextField(null=True,blank=True)
+    present_health_condition = models.TextField(null=True,blank=True)
     
     # Personal Details
     gender = models.CharField(max_length=20, choices=GENDER_CHOICES)
-    blood_group = models.CharField(max_length=3, choices=BLOOD_GROUP_CHOICES, blank=True)
-    preferred_language = models.CharField(max_length=20, blank=True)
+    blood_group = models.CharField(max_length=3, choices=BLOOD_GROUP_CHOICES,null=True, blank=True)
+    preferred_language = models.CharField(max_length=20,null=True, blank=True)
     
     # Identification
     id_proof = models.CharField(max_length=20, choices=ID_PROOF_CHOICES)
@@ -111,8 +112,8 @@ class Patient(models.Model):
     patient_documents = models.FileField(upload_to='patient_documents/',help_text="Upload related document")
     
     # Professional Background
-    education_qualifications = models.TextField(blank=True)
-    earlier_occupation = models.CharField(max_length=200, blank=True)
+    education_qualifications = models.TextField(null=True,blank=True)
+    earlier_occupation = models.CharField(max_length=200,null=True, blank=True)
     year_of_retirement = models.PositiveIntegerField(
         null=True,
         blank=True,
@@ -136,6 +137,7 @@ class Patient(models.Model):
     payment_mode = models.CharField(
         max_length=20,
         choices=PAYMENT_MODE_CHOICES,
+        null=True,
         blank=True
     )
     
@@ -170,9 +172,7 @@ class Patient(models.Model):
         return total
     
     def clean(self):
-        """Custom validation"""
-        from django.core.exceptions import ValidationError
-        
+        """Custom validation"""       
         # Validate ID proof number based on type
         if self.id_proof == 'aadhar' and self.id_proof_number:
             if not self.id_proof_number.isdigit() or len(self.id_proof_number) != 12:
