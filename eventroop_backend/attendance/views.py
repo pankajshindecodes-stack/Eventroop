@@ -7,34 +7,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
 from .models import AttendanceStatus, Attendance
-from .permissions import IsVSREOwnerOrReadOnlyForTeam
+from .permissions import IsSuperUserOrReadOnly
 
 
 class AttendanceStatusViewSet(ModelViewSet):
     queryset = AttendanceStatus.objects.all()
     serializer_class = AttendanceStatusSerializer
-    permission_classes = [IsAuthenticated,IsVSREOwnerOrReadOnlyForTeam]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_superuser:
-            return AttendanceStatus.objects.all()
-        
-        if user.is_owner:
-            return AttendanceStatus.objects.filter(owner=user)
-
-        return AttendanceStatus.objects.filter(owner=user.hierarchy.owner)
-        
-
-    def perform_create(self, serializer):
-        user = self.request.user
-        if user.is_superuser:
-            # Admin can set any owner explicitly
-            serializer.save()
-        else:
-            # Owner: automatically set owner to self
-            serializer.save(owner=user)
-
+    permission_classes = [IsAuthenticated,IsSuperUserOrReadOnly]
 
 class AttendanceView(APIView):
     """

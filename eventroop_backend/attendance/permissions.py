@@ -1,17 +1,15 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
-class IsVSREOwnerOrReadOnlyForTeam(BasePermission):
+class IsSuperUserOrReadOnly(BasePermission):
+    """
+    Superusers have full access.
+    All other users: read-only
+    """
 
     def has_permission(self, request, view):
-        user = request.user
-
-        # If owner → full access
-        if getattr(user, "is_owner", False):
+        # Allow safe (GET, HEAD, OPTIONS) for everyone
+        if request.method in SAFE_METHODS:
             return True
 
-        # If manager or staff → read-only
-        if getattr(user, "is_manager", False) or getattr(user, "is_vsre_staff", False):
-            return request.method in SAFE_METHODS
-
-        # Otherwise → no permissions
-        return False
+        # Write permissions only for superusers
+        return request.user and request.user.is_superuser

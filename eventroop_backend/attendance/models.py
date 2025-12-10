@@ -3,7 +3,6 @@ from django.utils import timezone
 from accounts.models import CustomUser
 from datetime import timedelta
 from decimal import Decimal
-
 # Create your models here.
 
 class AttendanceStatus(models.Model):
@@ -11,14 +10,6 @@ class AttendanceStatus(models.Model):
     Master table for attendance statuses.
     Replaces TextChoices so statuses are stored dynamically in DB.
     """
-    owner = models.ForeignKey(
-        CustomUser,
-        on_delete=models.CASCADE,
-        null=True,
-        related_name="owner_attendance_status",
-        limit_choices_to={"user_type": "VSRE_OWNER"}
-    )
-
     code = models.CharField(max_length=20, unique=True)   # e.g., PRESENT
     label = models.CharField(max_length=50)               # e.g., Present
     is_active = models.BooleanField(default=True)
@@ -77,8 +68,8 @@ class Attendance(models.Model):
 
 class TotalAttendance(models.Model):
     """
-    Stores aggregated attendance hours for a user.
-    These records will be updated from Attendance model via signals.
+    Stores aggregated attendance totals for a user.
+    Updated automatically from Attendance records.
     """
 
     user = models.OneToOneField(
@@ -90,37 +81,24 @@ class TotalAttendance(models.Model):
         }
     )
 
-    # Aggregated period totals
-    total_hours_day = models.DecimalField(
-        max_digits=6,
-        decimal_places=2,
-        default=0,
-        help_text="Total hours for this day"
+    # Aggregated totals
+    total_payable_days = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text="Total payable days"
+    )
+    total_payable_hours = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Total payable hours"
     )
 
-    total_hours_week = models.DecimalField(
-        max_digits=7,
-        decimal_places=2,
-        default=0,
-        help_text="Total hours for the week (Mon-Sun)"
-    )
-
-    total_hours_fortnight = models.DecimalField(
-        max_digits=8,
-        decimal_places=2,
-        default=0,
-        help_text="Total hours for the fortnight (14 days)"
-    )
-
-    total_hours_month = models.DecimalField(
-        max_digits=9,
-        decimal_places=2,
-        default=0,
-        help_text="Total hours for the calendar month"
-    )
+    present_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    absent_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    half_day_count = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    paid_leave_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    payable_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now=True)    
 
     class Meta:
         verbose_name = "Total Attendance"
