@@ -85,7 +85,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
         # ====================================================
         if any((user.is_owner, user.is_manager, user.is_vsre_staff)):
             # Determine owner
-            if creator.is_superuser or creator.is_owner:
+            if creator.is_superuser or creator.is_owner or creator.is_manager:
                 owner = creator
             else:
                 owner = creator.hierarchy.owner
