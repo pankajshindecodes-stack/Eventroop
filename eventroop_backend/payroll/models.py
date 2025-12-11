@@ -10,7 +10,7 @@ class SalaryStructure(models.Model):
         ("MONTHLY", "Monthly"),
     ]
 
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
         related_name="salary_structure",
@@ -22,31 +22,13 @@ class SalaryStructure(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     total_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # Total outstanding advance taken by this employee
+    advance_amount = models.DecimalField(max_digits=10,decimal_places=2,default=0,null=True, blank=True)
+    is_increment = models.BooleanField(default=False)
 
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def calculate_salary(self, attendance):
-        """
-        attendance = TotalAttendance instance
-        """
-        st = self.salary_type
-
-        if st == "HOURLY":
-            return (attendance.total_hours_day or 0) * (self.rate or 0)
-
-        if st == "DAILY":
-            return (self.rate or 0)
-
-        if st == "WEEKLY":
-            return (self.rate or 0)
-
-        if st == "FORTNIGHTLY":
-            return (self.rate or 0)
-
-        if st == "MONTHLY":
-            return (self.rate or 0)
-
-        return 0
+    created_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Salary Structure for {self.user.get_full_name()}"
@@ -87,7 +69,7 @@ class PayRollPayment(models.Model):
         choices=STATUS_CHOICES,
         default="PENDING"
     )
-
+    
     note = models.TextField(blank=True, null=True)
     attachment = models.FileField(upload_to="payment_receipts/", null=True, blank=True)
 

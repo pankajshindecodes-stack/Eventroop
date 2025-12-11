@@ -1,84 +1,102 @@
 from django.contrib import admin
-from django.utils.html import format_html
-from .models import SalaryStructure
+from .models import SalaryStructure, PayRollPayment
 
 
+# ---------------------------------------------
+# Salary Structure Admin
+# ---------------------------------------------
 @admin.register(SalaryStructure)
 class SalaryStructureAdmin(admin.ModelAdmin):
     list_display = (
         "user",
         "salary_type",
-        "get_rate",
+        "rate",
         "total_salary",
+        "advance_amount",
+        "is_increment",
+        "created_at",
+    )
+
+    search_fields = (
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+    )
+
+    list_filter = (
+        "salary_type",
+        "is_increment",
+        "created_at",
+    )
+
+    readonly_fields = (
+        "created_at",
         "updated_at",
     )
-    list_filter = ("salary_type", "updated_at", "user__user_type")
-    search_fields = ("user__first_name", "user__last_name", "user__email")
-    readonly_fields = ("updated_at", "calculate_salary_display")
-    
+
     fieldsets = (
-        ("User Information", {
+        ("Employee", {
             "fields": ("user",)
         }),
-        ("Salary Type & Rates", {
-            "fields": (
-                "salary_type",
-                "hour_rate",
-                "daily_rate",
-                "weekly_rate",
-                "fortnight_rate",
-                "monthly_rate",
-            ),
-            "description": "Set the rate based on the selected salary type."
+        ("Salary Info", {
+            "fields": ("salary_type", "rate", "total_salary", "advance_amount", "is_increment")
         }),
-        ("Total Salary", {
-            "fields": ("total_salary",)
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at")
+        })
+    )
+
+
+# ---------------------------------------------
+# PayRollPayment Admin
+# ---------------------------------------------
+@admin.register(PayRollPayment)
+class PayRollPaymentAdmin(admin.ModelAdmin):
+    list_display = (
+        "receiver",
+        "payment_type",
+        "amount",
+        "status",
+        "created_at",
+        "updated_at",
+    )
+
+    search_fields = (
+        "receiver__first_name",
+        "receiver__last_name",
+        "receiver__email",
+        "note",
+    )
+
+    list_filter = (
+        "payment_type",
+        "status",
+        "created_at",
+    )
+
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+    )
+
+    fieldsets = (
+        ("Payment Info", {
+            "fields": ("receiver", "payment_type", "amount", "status")
         }),
-        ("Metadata", {
-            "fields": ("updated_at",),
-            "classes": ("collapse",)
+        ("Additional Details", {
+            "fields": ("note", "attachment")
+        }),
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at")
         }),
     )
 
-    def get_rate(self, obj):
-        """Display the current rate based on salary type."""
-        rates = {
-            "HOURLY": obj.hour_rate,
-            "DAILY": obj.daily_rate,
-            "WEEKLY": obj.weekly_rate,
-            "FORTNIGHTLY": obj.fortnight_rate,
-            "MONTHLY": obj.monthly_rate,
-        }
-        rate = rates.get(obj.salary_type, 0)
-        return f"${rate:,.2f}" if rate else "—"
-    
-    get_rate.short_description = "Current Rate"
+    # Show file link nicely in admin
+    def attachment_link(self, obj):
+        if obj.attachment:
+            return f"<a href='{obj.attachment.url}' target='_blank'>View Receipt</a>"
+        return "-"
+    attachment_link.allow_tags = True
+    attachment_link.short_description = "Receipt"
 
-    def calculate_salary_display(self, obj):
-        """Display salary calculation info (read-only)."""
-        if not obj.pk:
-            return "—"
-        
-        attendance = getattr(obj.user, "total_attendance", None)
-        if not attendance:
-            return format_html(
-                '<span style="color: red;">No attendance record found</span>'
-            )
-        
-        salary = obj.calculate_salary(attendance)
-        return format_html(
-            '<strong style="color: green;">${:,.2f}</strong>',
-            salary
-        )
-    
-    calculate_salary_display.short_description = "Calculated Salary"
 
-    def get_readonly_fields(self, request, obj=None):
-        """Make user field read-only when editing existing record."""
-        if obj:
-            return self.readonly_fields + ("user",)
-        return self.readonly_fields
-
-    def save_model(self, request, obj, form, change):
-        """Save the model and log changes."""
-        super().save_model(request, obj, form, change)

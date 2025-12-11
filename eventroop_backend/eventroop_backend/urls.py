@@ -7,7 +7,7 @@ admin.site.site_header = "Value Occations Admin Panel"
 admin.site.site_title = "Value Occations Admin"
 admin.site.index_title = "Welcome to Value Occations Administration"
 
-urlpatterns = [
+urlpatterns = [ 
     path('admin/', admin.site.urls),
     path("",status),
     path('accounts/', include(('accounts.urls', 'accounts'), namespace='accounts')),
@@ -16,7 +16,5 @@ urlpatterns = [
     path('attendance/', include(('attendance.urls', 'attendance'), namespace='attendance')),
 ]
 
-# Serve media and static files during development
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
