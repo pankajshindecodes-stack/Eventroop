@@ -11,4 +11,5 @@ router.register(r'attendance-status', AttendanceStatusViewSet, basename='attenda
 urlpatterns = [
     path('', include(router.urls)),
     path('attendance/', AttendanceView.as_view(), name='attendance'),
+    path('total-attendance/', TotalAttendanceView.as_view(), name='total_attendance'),
 ]
