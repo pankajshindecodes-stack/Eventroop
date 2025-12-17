@@ -2,14 +2,16 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from .views import status
+from django.views.generic import RedirectView
+
 admin.site.site_header = "Value Occations Admin Panel"
 admin.site.site_title = "Value Occations Admin"
 admin.site.index_title = "Welcome to Value Occations Administration"
 
 urlpatterns = [ 
     path('admin/', admin.site.urls),
-    path("",status),
+    path("", RedirectView.as_view(url="/login/", permanent=False)),
+    path("",include("rest_framework.urls")),
     path('accounts/', include(('accounts.urls', 'accounts'), namespace='accounts')),
     path('management/', include(('venue_manager.urls', 'venue_manager'), namespace='venue_manager')),
     path('booking/', include(('booking.urls', 'booking'), namespace='booking')),
