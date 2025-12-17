@@ -82,6 +82,22 @@ class TotalAttendance(models.Model):
     )
 
     # Aggregated totals
+    present_days = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text="Total present days"
+    )
+    absent_days = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text="Total absent days"
+    )
+    half_day_count = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text="Total half days"
+    )
+    paid_leave_days = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text="Total paid leave days"
+    )
     total_payable_days = models.DecimalField(
         max_digits=8, decimal_places=2, default=0,
         help_text="Total payable days"
@@ -91,20 +107,15 @@ class TotalAttendance(models.Model):
         help_text="Total payable hours"
     )
 
-    present_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    absent_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    half_day_count = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    paid_leave_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    payable_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)    
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Total Attendance"
         verbose_name_plural = "Total Attendance Records"
         indexes = [
-            models.Index(fields=["user", "updated_at"]),
+            models.Index(fields=["user"]),
+            models.Index(fields=["updated_at"]),
         ]
 
     def __str__(self):

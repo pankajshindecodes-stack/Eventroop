@@ -38,19 +38,18 @@ class AttendanceAdmin(admin.ModelAdmin):
         return "-"
     formatted_duration.short_description = "Duration (hrs)"
 
-
 # ------------------------------------------
 # Total Attendance Admin
 # ------------------------------------------
 @admin.register(TotalAttendance)
 class TotalAttendanceAdmin(admin.ModelAdmin):
     list_display = (
-        "user",
+        "get_user_name",
         "present_days",
         "absent_days",
         "half_day_count",
         "paid_leave_days",
-        "payable_days",
+        "total_payable_days",
         "total_payable_hours",
         "updated_at",
     )
@@ -59,7 +58,33 @@ class TotalAttendanceAdmin(admin.ModelAdmin):
         "user__last_name",
         "user__email",
     )
-    ordering = ("user__first_name",)
+    ordering = ("-updated_at",)
     readonly_fields = ("created_at", "updated_at")
-
     list_filter = ("updated_at",)
+    list_per_page = 50
+    date_hierarchy = "updated_at"
+
+    fieldsets = (
+        ("User Info", {
+            "fields": ("user",)
+        }),
+        ("Attendance Metrics", {
+            "fields": (
+                "present_days",
+                "absent_days",
+                "half_day_count",
+                "paid_leave_days",
+                "payable_days",
+                "total_payable_hours",
+            )
+        }),
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at"),
+            "classes": ("collapse",)
+        }),
+    )
+
+    def get_user_name(self, obj):
+        return obj.user.get_full_name()
+    get_user_name.short_description = "User"
+    get_user_name.admin_order_field = "user__first_name"

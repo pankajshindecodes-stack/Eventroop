@@ -1,3 +1,4 @@
+# attendance/signal.py 
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db.models import Sum
@@ -7,19 +8,15 @@ from datetime import timedelta
 from .models import Attendance, TotalAttendance, AttendanceStatus
 
 
-# -------------------------------------------
-# Convert timedelta → decimal hours
-# -------------------------------------------
 def duration_to_hours(duration: timedelta) -> Decimal:
+    """Convert timedelta to decimal hours."""
     if not duration:
         return Decimal("0")
     return Decimal(duration.total_seconds()) / Decimal(3600)
 
 
-# -------------------------------------------
-# Attendance Aggregation Logic
-# -------------------------------------------
 def update_total_attendance(user):
+    """Update TotalAttendance without triggering salary calculation multiple times."""
     records = Attendance.objects.filter(user=user)
 
     # Status codes
@@ -53,21 +50,19 @@ def update_total_attendance(user):
     total.absent_days = absent_days
     total.half_day_count = half_day_days
     total.paid_leave_days = paid_leave_days
-
-    total.total_payable_hours = total_hours
-    total.payable_days = payable_days
     total.total_payable_days = payable_days
+    total.total_payable_hours = total_hours 
 
     total.save()
 
-# -------------------------------------------
-# Signals
-# -------------------------------------------
+
 @receiver(post_save, sender=Attendance)
 def attendance_saved(sender, instance, **kwargs):
+    """Trigger attendance update when record is saved."""
     update_total_attendance(instance.user)
 
 
 @receiver(post_delete, sender=Attendance)
 def attendance_deleted(sender, instance, **kwargs):
+    """Trigger attendance update when record is deleted."""
     update_total_attendance(instance.user)
