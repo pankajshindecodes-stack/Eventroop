@@ -65,6 +65,7 @@ MIDDLEWARE = [
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = True
 CSRF_TRUSTED_ORIGINS = [
+    "redis://127.0.0.1:6379",
     "http://localhost",
     "http://127.0.0.1",
     "http://localhost:5173",
