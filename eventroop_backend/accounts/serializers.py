@@ -63,15 +63,17 @@ class BaseUserSerializer(serializers.ModelSerializer):
 # ---------------------- Create ----------------------
     def create(self, validated_data):
         request = self.context["request"]
-        creator = request.user
+        creator = request.user if request.user.is_authenticated else None
 
         # Remove unwanted fields
         password = validated_data.pop("password", None)
         validated_data.pop("confirm_password", None)
 
-        # Assign creator
-        if any((creator.is_owner, creator.is_manager)):
+        # Assign creator only for owner / manager
+        if creator and (creator.is_owner or creator.is_manager):
             validated_data["created_by"] = creator
+        else:
+            validated_data["created_by"] = None
 
         # Create user
         user = CustomUser(**validated_data)
@@ -80,14 +82,17 @@ class BaseUserSerializer(serializers.ModelSerializer):
         user.save()
 
         # ====================================================
-        #  HIERARCHY CREATION ONLY FOR OWNER / MANAGER / STAFF
+        #  HIERARCHY CREATION (Owner / Manager / Staff only)
         # ====================================================
-        if any((user.is_owner, user.is_manager, user.is_vsre_staff)):
-            # Determine owner
-            if creator.is_superuser or creator.is_owner or creator.is_manager:
+        if user.is_owner or user.is_manager or user.is_vsre_staff:
+
+            # Resolve owner safely
+            if creator and (creator.is_superuser or creator.is_owner or creator.is_manager):
                 owner = creator
+            elif creator:
+                owner = getattr(creator.hierarchy, "owner", None)
             else:
-                owner = creator.hierarchy.owner
+                owner = None
 
             UserHierarchy.objects.create(
                 user=user,
@@ -96,7 +101,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             )
 
         return user
-    # ---------------------- Update ----------------------
+# ---------------------- Update ----------------------
     def update(self, instance, validated_data):
         request = self.context["request"]
         password = validated_data.pop("password", None)
