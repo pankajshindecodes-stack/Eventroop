@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'django_celery_beat',
 
     # Cloudinary Apps only when enabled
     'cloudinary',
@@ -85,6 +86,11 @@ CSRF_COOKIE_HTTPONLY = False
 ROOT_URLCONF = 'eventroop_backend.urls'
 WSGI_APPLICATION = 'eventroop_backend.wsgi.application'
 ASGI_APPLICATION = "eventroop_backend.asgi.application"
+
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
+# TODO: currenly working on 1 cpu because db is free version, Update later
+CELERY_WORKER_POOL = 'solo'
+CELERY_WORKER_CONCURRENCY = 1 
 
 
 
