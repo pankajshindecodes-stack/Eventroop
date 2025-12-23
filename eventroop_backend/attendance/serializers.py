@@ -1,6 +1,6 @@
 # serializers.py
 from rest_framework import serializers
-from .models import Attendance, AttendanceStatus,TotalAttendance
+from .models import Attendance, AttendanceStatus
 
 
 class AttendanceStatusSerializer(serializers.ModelSerializer):    
@@ -41,20 +41,3 @@ class AttendanceSerializer(serializers.ModelSerializer):
         
         return data
     
-
-class TotalAttendanceSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
-    
-    class Meta:
-        model = TotalAttendance
-        fields = [
-            "id",
-            "user_name",
-            "present_days",
-            "absent_days",
-            "half_day_count",
-            "paid_leave_days",
-            "total_payable_days",
-            "total_payable_hours",
-        ]
-        read_only_fields = fields
