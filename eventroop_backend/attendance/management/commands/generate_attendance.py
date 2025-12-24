@@ -11,16 +11,16 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         # Get the "Present" status with code "P"
         try:
-            present_status = AttendanceStatus.objects.get(code='PRESENT')
+            present_status = AttendanceStatus.objects.get(code='P')
         except AttendanceStatus.DoesNotExist:
             self.stdout.write(
                 self.style.ERROR("AttendanceStatus with code 'P' (Present) not found.")
             )
             return
-
-        current_date = date.today()  # Today's date
+        start_date = date(year=2025, month=12, day=20) 
+        end_date = date.today()  # Today's date
         
-        users = CustomUser.objects.get_staff_under_owner(owner=38)
+        users = CustomUser.objects.get_staff_under_owner(owner=2)
         users_list = list(users.values_list('id', flat=True))
 
         if not users_list:
@@ -28,26 +28,29 @@ class Command(BaseCommand):
             return
 
         # Get existing attendance records to avoid duplicates
-        existing = set(
-            Attendance.objects.filter(
+        def daterange(start_date, end_date):
+            for n in range((end_date - start_date).days + 1):
+                yield start_date + timedelta(days=n)
+    
+        existing = set(Attendance.objects.filter(
                 user_id__in=users_list,
-                date=current_date
-            ).values_list('user_id', 'date')
-        )
-
+                date__in=daterange(start_date, end_date)
+            ).values_list('user_id', 'date'))
         # Prepare bulk create data with "Present" status
+
         attendance_records = []
         for user_id in users_list:
-            if (user_id, current_date) not in existing:
-                attendance_records.append(
-                    Attendance(
-                        user_id=user_id,
-                        date=current_date,
-                        status=present_status,
-                        duration=None,
+            for current_date in daterange(start_date, end_date):
+                if (user_id, current_date) not in existing:
+                    print(f'Current Date : {current_date}')
+                    attendance_records.append(
+                        Attendance(
+                            user_id=user_id,
+                            date=current_date,
+                            status=present_status,
+                            duration=None,
+                        )
                     )
-                )
-
         # Bulk create all at once
         if attendance_records:
             created = Attendance.objects.bulk_create(
