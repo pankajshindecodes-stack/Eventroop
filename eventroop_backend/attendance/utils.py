@@ -40,12 +40,13 @@ class AttendanceCalculator:
     def _load_status_codes(self):
         """Load attendance status codes."""
         from .models import AttendanceStatus
-        
         return {
-            'present': AttendanceStatus.objects.filter(code__iexact=self.STATUS_PRESENT).first(),
-            'absent': AttendanceStatus.objects.filter(code__iexact=self.STATUS_ABSENT).first(),
-            'half_day': AttendanceStatus.objects.filter(code__iexact=self.STATUS_HALF_DAY).first(),
-            'paid_leave': AttendanceStatus.objects.filter(code__iexact=self.STATUS_PAID_LEAVE).first(),
+            'absent': AttendanceStatus.objects.get(id=1),
+            'present': AttendanceStatus.objects.get(id=2),
+            'paid_leave': AttendanceStatus.objects.get(id=3),
+            'half_day': AttendanceStatus.objects.get(id=4),
+            'weekly_Off': AttendanceStatus.objects.get(id=5),
+            'unpaid_leave': AttendanceStatus.objects.get(id=6),
         }
 
     def _count_status(self, status_obj):
@@ -66,10 +67,17 @@ class AttendanceCalculator:
 
     def calculate(self):
         """Calculate all attendance metrics."""
-        present = self._count_status(self.status_codes['present'])
+        'absent'
+        'present'
+        'paid_leave'
+        'half_day'
+        
         absent = self._count_status(self.status_codes['absent'])
-        half_day = self._count_status(self.status_codes['half_day'])
+        present = self._count_status(self.status_codes['present'])
         paid_leave = self._count_status(self.status_codes['paid_leave'])
+        half_day = self._count_status(self.status_codes['half_day'])
+        weekly_Off = self._count_status(self.status_codes['weekly_Off'])
+        unpaid_leave = self._count_status(self.status_codes['unpaid_leave'])
         total_hours = self._calculate_total_hours()
 
         payable_days = present + paid_leave + (Decimal("0.5") * half_day)
@@ -79,6 +87,8 @@ class AttendanceCalculator:
             "absent_days": absent,
             "half_day_count": half_day,
             "paid_leave_days": paid_leave,
+            "weekly_Offs": weekly_Off,
+            "unpaid_leaves": unpaid_leave,
             "total_payable_days": float(payable_days),
             "total_payable_hours": float(total_hours),
         }
