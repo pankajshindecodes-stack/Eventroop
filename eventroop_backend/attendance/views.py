@@ -28,6 +28,18 @@ class AttendanceStatusViewSet(ModelViewSet):
     queryset = AttendanceStatus.objects.all()
     serializer_class = AttendanceStatusSerializer
     permission_classes = [IsAuthenticated,IsSuperUserOrReadOnly]
+    
+    def get(self, request):
+        user = request.user
+        # Admin → see everything
+        if user.is_superuser:
+            queryset = AttendanceStatus.objects.all()
+        # Owner → see attendance of their staff + managers
+        elif user.is_owner :
+            queryset = AttendanceStatus.objects.filter(user__hierarchy__owner=user)
+        # Staff or Manager → see only their own attendance
+        else:
+            queryset = AttendanceStatus.objects.filter(user=user)
 
 class AttendanceView(APIView):
     """

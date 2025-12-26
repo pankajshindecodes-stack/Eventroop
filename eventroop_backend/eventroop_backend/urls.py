@@ -4,9 +4,10 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import RedirectView
 
-admin.site.site_header = "Value Occations Admin Panel"
+admin.site.site_header = "Admin Panel"
 admin.site.site_title = "Value Occations Admin"
 admin.site.index_title = "Welcome to Value Occations Administration"
+
 
 urlpatterns = [ 
     path('admin/', admin.site.urls),

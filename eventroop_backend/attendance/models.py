@@ -10,6 +10,12 @@ class AttendanceStatus(models.Model):
     Master table for attendance statuses.
     Replaces TextChoices so statuses are stored dynamically in DB.
     """
+    owner = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="attendance_statuses",
+        limit_choices_to={"user_type":"VSRE_OWNER"}
+    )
     code = models.CharField(max_length=20, unique=True)   # e.g., PRESENT
     label = models.CharField(max_length=50)               # e.g., Present
     is_active = models.BooleanField(default=True)

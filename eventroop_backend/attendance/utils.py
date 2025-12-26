@@ -40,13 +40,15 @@ class AttendanceCalculator:
     def _load_status_codes(self):
         """Load attendance status codes."""
         from .models import AttendanceStatus
+        
+        status_query  = AttendanceStatus.objects.filter(owner=self.user.hierarchy.owner)
         return {
-            'absent': AttendanceStatus.objects.get(id=1),
-            'present': AttendanceStatus.objects.get(id=2),
-            'paid_leave': AttendanceStatus.objects.get(id=3),
-            'half_day': AttendanceStatus.objects.get(id=4),
-            'weekly_Off': AttendanceStatus.objects.get(id=5),
-            'unpaid_leave': AttendanceStatus.objects.get(id=6),
+            'absent': status_query.filter(label__icontains="absent",is_active=True).first(),
+            'present': status_query.filter(label__icontains="present",is_active=True).first(),
+            'paid_leave': status_query.filter(label__icontains="paid_leave",is_active=True).first(),
+            'half_day': status_query.filter(label__icontains="half_day",is_active=True).first(),
+            'weekly_Off': status_query.filter(label__icontains="weekly_Off",is_active=True).first(),
+            'unpaid_leave': status_query.filter(label__icontains="unpaid_leave",is_active=True).first(),
         }
 
     def _count_status(self, status_obj):
