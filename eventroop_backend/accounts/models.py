@@ -233,6 +233,8 @@ class UserHierarchy(models.Model):
         CustomUser,
         on_delete=models.CASCADE,
         related_name="organization_users",
+        null=True,
+        blank=True,
         limit_choices_to={"user_type": "VSRE_OWNER"},
         help_text="Top-level owner for this user hierarchy.",
     )
