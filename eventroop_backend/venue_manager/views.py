@@ -1,4 +1,5 @@
 from rest_framework import viewsets, views,status
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.exceptions import PermissionDenied
@@ -16,6 +17,7 @@ from .validations import *
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
     permission_classes = [IsAuthenticated, EntityAccessPermission]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     filterset_fields = {
         "city": ["iexact", "icontains"],
         "is_active": ["exact"],
@@ -78,7 +80,7 @@ class VenueViewSet(viewsets.ModelViewSet):
 class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     permission_classes = [IsAuthenticated, EntityAccessPermission]
-    
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     filterset_fields = {
         "is_active": ["exact"],
