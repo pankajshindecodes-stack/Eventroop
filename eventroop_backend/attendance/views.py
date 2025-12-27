@@ -21,25 +21,37 @@ from .serializers import (
     AttendanceSerializer,
     AttendanceStatusSerializer,
 )
-from .permissions import IsSuperUserOrReadOnly
+from .permissions import IsSuperUserOrOwnerOrReadOnly
 from .utils import SalaryCalculator, AttendanceCalculator
+from django.db.models import Q
+from rest_framework.viewsets import ModelViewSet
+from rest_framework.permissions import IsAuthenticated
 
 class AttendanceStatusViewSet(ModelViewSet):
-    queryset = AttendanceStatus.objects.all()
     serializer_class = AttendanceStatusSerializer
-    permission_classes = [IsAuthenticated,IsSuperUserOrReadOnly]
-    
-    def get(self, request):
-        user = request.user
-        # Admin → see everything
+    permission_classes = [IsAuthenticated, IsSuperUserOrOwnerOrReadOnly]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Superuser → everything
         if user.is_superuser:
-            queryset = AttendanceStatus.objects.all()
-        # Owner → see attendance of their staff + managers
-        elif user.is_owner :
-            queryset = AttendanceStatus.objects.filter(user__hierarchy__owner=user)
-        # Staff or Manager → see only their own attendance
-        else:
-            queryset = AttendanceStatus.objects.filter(user=user)
+            return AttendanceStatus.objects.all()
+
+        # Global statuses (created by superuser)
+        global_qs = AttendanceStatus.objects.filter(owner__is_superuser=True)
+
+        # Owner → global + own
+        if user.is_owner:
+            return global_qs | AttendanceStatus.objects.filter(owner=user)
+
+        # Staff / Manager → global + their owner's
+        if hasattr(user, "hierarchy") and user.hierarchy.owner:
+            return global_qs | AttendanceStatus.objects.filter(
+                owner=user.hierarchy.owner
+            )
+
+        return global_qs.none()
 
 class AttendanceView(APIView):
     """

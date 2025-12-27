@@ -1,15 +1,20 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
-class IsSuperUserOrReadOnly(BasePermission):
+
+class IsSuperUserOrOwnerOrReadOnly(BasePermission):
     """
-    Superusers have full access.
+    Superusers and Owners have full access.
     All other users: read-only
     """
 
     def has_permission(self, request, view):
-        # Allow safe (GET, HEAD, OPTIONS) for everyone
+        # Read-only access for everyone
         if request.method in SAFE_METHODS:
             return True
 
-        # Write permissions only for superusers
-        return request.user and request.user.is_superuser
+        user = request.user
+        return bool(
+            user
+            and user.is_authenticated
+            and (user.is_superuser or user.is_owner)
+        )
