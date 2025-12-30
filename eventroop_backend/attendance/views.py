@@ -216,20 +216,17 @@ class AttendanceReportAPIView(APIView):
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
 
-        if not (start_date_str and end_date_str):
+        if not all(start_date_str and end_date_str):
             return self.get_default_period()
-
         try:
-            start_date = timezone.datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            end_date = timezone.datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            
-            # Validate date range
+            start_date = timezone.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            end_date = timezone.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
             if end_date < start_date:
-                return self.get_default_period()
-            
+                raise ValueError("end_date cannot be earlier than start_date")
             return start_date, end_date
-        except ValueError:
-            return self.get_default_period()
+        except ValueError as e:
+            raise ValueError(f"Invalid date input: {e}") from e
 
     def get_salary_structure(self, user, reference_date):
         """Get the active salary structure for a user."""
