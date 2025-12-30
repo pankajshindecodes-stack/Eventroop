@@ -24,4 +24,4 @@ class SalaryStructureSerializer(serializers.ModelSerializer):
             'is_increment',
             'effective_from',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id','total_salary', 'created_at', 'updated_at']
