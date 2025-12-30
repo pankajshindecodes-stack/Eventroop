@@ -6,18 +6,42 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from decimal import Decimal
 from .models import SalaryStructure, CustomUser, SalaryTransaction
-from .serializers import SalaryStructureSerializer, SalaryIncrementSerializer
+from .serializers import SalaryStructureSerializer
+from rest_framework import viewsets, status
 
 
-class SalaryStructureListCreateView(APIView):
+class SalaryStructureViewSet(viewsets.ModelViewSet):
     """
-    GET: List salary structures based on user hierarchy
-    POST: Create a new salary structure
+    API ViewSet for managing SalaryStructure records.
+
+    Access Control:
+    - Superusers can view and manage all salary structures.
+    - Owners can view salary structures of users under their hierarchy
+      (staff and managers).
+    - Staff and managers can only view their own salary structure.
+
+    Features:
+    - Uses `user_id` as the URL lookup field.
+    - Supports filtering by:
+        - user_id
+        - salary_type
+        - is_increment
+        - effective_from
+    - Supports searching by user details:
+        - email
+        - first name
+        - last name
+        - mobile number
+    - Results are ordered by `effective_from` in descending order.
     """
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request):
-        user = request.user
+
+    serializer_class = SalaryStructureSerializer    
+    filterset_fields = ['user_id','salary_type','is_increment','effective_from']
+    search_fields = ["user__email", "user__first_name", "user__last_name", "user__mobile_number"]
+
+    def get_queryset(self):
+        """Get queryset based on user hierarchy"""
+        user = self.request.user
         
         # Admin → see everything
         if user.is_superuser:
@@ -29,225 +53,8 @@ class SalaryStructureListCreateView(APIView):
         else:
             queryset = SalaryStructure.objects.filter(user=user)
         
-        # Apply filters from query parameters
-        user_id = request.query_params.get('user_id', None)
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-        
-        salary_type = request.query_params.get('salary_type')
-        if salary_type:
-            queryset = queryset.filter(salary_type=salary_type)
-        
-        is_increment = request.query_params.get('is_increment')
-        if is_increment is not None:
-            queryset = queryset.filter(is_increment=is_increment.lower() == 'true')
-        
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        if start_date:
-            queryset = queryset.filter(effective_from__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(effective_from__lte=end_date)
-        
-        queryset = queryset.select_related('user').order_by('-effective_from')
-        serializer = SalaryStructureSerializer(queryset, many=True)
-        
-        return Response({
-            'count': queryset.count(),
-            'results': serializer.data
-        }, status=status.HTTP_200_OK)
+        return queryset.select_related('user').order_by('-effective_from')
     
-    def post(self, request):
-        """Create a new salary structure"""
-        serializer = SalaryStructureSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        
-        return Response(
-            {
-                'message': 'Salary structure created successfully',
-                'data': serializer.data
-            },
-            status=status.HTTP_201_CREATED
-        )
-
-
-class SalaryStructureDetailView(APIView):
-    """
-    GET: Retrieve a specific salary structure
-    PUT: Update a salary structure
-    PATCH: Partially update a salary structure
-    DELETE: Delete a salary structure
-    """
-    permission_classes = [IsAuthenticated]
-    
-    def get_object(self, pk, user):
-        """Get salary structure with hierarchy-based permissions"""
-        try:
-            salary_structure = SalaryStructure.objects.select_related('user').get(pk=pk)
-        except SalaryStructure.DoesNotExist:
-            return None
-        
-        if user.is_superuser:
-            return salary_structure
-        elif user.is_owner:
-            if hasattr(salary_structure.user, 'hierarchy') and salary_structure.user.hierarchy.owner == user:
-                return salary_structure
-        else:
-            if salary_structure.user == user:
-                return salary_structure
-        
-        return None
-    
-    def get(self, request, pk):
-        """Retrieve a specific salary structure"""
-        salary_structure = self.get_object(pk, request.user)
-        
-        if not salary_structure:
-            return Response(
-                {'error': 'Salary structure not found or access denied'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        serializer = SalaryStructureSerializer(salary_structure)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    def put(self, request, pk):
-        """Update a salary structure"""
-        salary_structure = self.get_object(pk, request.user)
-        
-        if not salary_structure:
-            return Response(
-                {'error': 'Salary structure not found or access denied'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        serializer = SalaryStructureSerializer(salary_structure, data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        
-        return Response(
-            {
-                'message': 'Salary structure updated successfully',
-                'data': serializer.data
-            },
-            status=status.HTTP_200_OK
-        )
-    
-    def patch(self, request, pk):
-        """Partially update a salary structure"""
-        salary_structure = self.get_object(pk, request.user)
-        
-        if not salary_structure:
-            return Response(
-                {'error': 'Salary structure not found or access denied'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        serializer = SalaryStructureSerializer(
-            salary_structure, 
-            data=request.data, 
-            partial=True
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        
-        return Response(
-            {
-                'message': 'Salary structure updated successfully',
-                'data': serializer.data
-            },
-            status=status.HTTP_200_OK
-        )
-    
-    def delete(self, request, pk):
-        """Delete a salary structure"""
-        salary_structure = self.get_object(pk, request.user)
-        
-        if not salary_structure:
-            return Response(
-                {'error': 'Salary structure not found or access denied'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        salary_structure.delete()
-        
-        return Response(
-            {'message': 'Salary structure deleted successfully'},
-            status=status.HTTP_204_NO_CONTENT
-        )
-
-
-class SalaryIncrementView(APIView):
-    """
-    POST: Apply salary increment to a user
-    """
-    permission_classes = [IsAuthenticated]
-    
-    def post(self, request):
-        """Apply salary increment to a user"""
-        serializer = SalaryIncrementSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        user = serializer.validated_data['user']
-        effective_from = serializer.validated_data['effective_from']
-        
-        requesting_user = request.user
-        if not requesting_user.is_superuser:
-            if requesting_user.is_owner:
-                if not hasattr(user, 'hierarchy') or user.hierarchy.owner != requesting_user:
-                    return Response(
-                        {'error': 'You do not have permission to modify this user\'s salary'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            else:
-                return Response(
-                    {'error': 'You do not have permission to apply salary increments'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        
-        latest_salary = SalaryStructure.objects.filter(
-            user=user,
-            effective_from__lt=effective_from
-        ).order_by('-effective_from').first()
-        
-        if not latest_salary:
-            return Response(
-                {'error': 'No previous salary structure found for this user'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if 'increment_amount' in serializer.validated_data and serializer.validated_data['increment_amount']:
-            new_salary = latest_salary.total_salary + serializer.validated_data['increment_amount']
-        else:
-            percentage = serializer.validated_data['increment_percentage']
-            increment = (latest_salary.total_salary * percentage) / Decimal('100')
-            new_salary = latest_salary.total_salary + increment
-        
-        new_salary_structure = SalaryStructure.objects.create(
-            user=user,
-            salary_type=latest_salary.salary_type,
-            rate=latest_salary.rate,
-            total_salary=new_salary,
-            advance_amount=Decimal('0'),
-            is_increment=True,
-            effective_from=effective_from
-        )
-        
-        response_serializer = SalaryStructureSerializer(new_salary_structure)
-        
-        return Response(
-            {
-                'message': 'Salary increment applied successfully',
-                'previous_salary': str(latest_salary.total_salary),
-                'new_salary': str(new_salary),
-                'increment_amount': str(new_salary - latest_salary.total_salary),
-                'data': response_serializer.data
-            },
-            status=status.HTTP_201_CREATED
-        )
-
-
 class SalaryTransactionView(APIView):
     """
     GET: Get salary payment history with filtering

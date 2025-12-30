@@ -4,7 +4,6 @@ from django.urls import reverse
 from django.db.models import Q
 from .models import SalaryStructure, SalaryTransaction
 
-
 @admin.register(SalaryStructure)
 class SalaryStructureAdmin(admin.ModelAdmin):
     list_display = (
@@ -15,7 +14,7 @@ class SalaryStructureAdmin(admin.ModelAdmin):
         "is_increment",
         "created_at",
     )
-    list_filter = ("salary_type", "is_increment", "effective_from", "created_at")
+    list_filter = ("user", "salary_type", "is_increment", "effective_from", "created_at")
     search_fields = ("user__first_name", "user__last_name", "user__email")
     date_hierarchy = "effective_from"
     readonly_fields = ("created_at", "updated_at")
@@ -42,7 +41,6 @@ class SalaryStructureAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.select_related("user")
-
 
 @admin.register(SalaryTransaction)
 class SalaryTransactionAdmin(admin.ModelAdmin):
