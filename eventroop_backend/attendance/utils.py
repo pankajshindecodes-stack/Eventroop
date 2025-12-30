@@ -12,19 +12,15 @@ class AttendanceCalculator:
         self.end_date = end_date
         self.records = self._get_records()
         self.status_codes = self._load_status_codes()
-
+    
     def _get_records(self):
         """Get attendance records for the period."""
-        from .models import Attendance
+        from .models import Attendance,AttendanceStatus
         
         query = Attendance.objects.filter(user=self.user)
         
         if self.start_date and self.end_date:
-            query = query.filter(
-                date__gte=self.start_date,
-                date__lte=self.end_date
-            )
-        
+            query = query.filter(date__gte=self.start_date,date__lte=self.end_date)
         return query
 
     def _load_status_codes(self):

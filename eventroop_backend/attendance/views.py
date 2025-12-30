@@ -151,6 +151,7 @@ class AttendanceView(APIView):
                     status=status.HTTP_201_CREATED
                 )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class AttendanceReportAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -234,6 +235,7 @@ class AttendanceReportAPIView(APIView):
 
         return {
             "salary_type": salary_structure.salary_type,
+            "final_salary": salary_structure.final_salary,
             "daily_rate": float(daily_rate),
             "current_payment": float(current_payment),
             "remaining_payable_days": remaining_days,
