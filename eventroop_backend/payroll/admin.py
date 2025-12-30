@@ -3,45 +3,65 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Q
 from .models import SalaryStructure, SalaryTransaction
-
 @admin.register(SalaryStructure)
 class SalaryStructureAdmin(admin.ModelAdmin):
+
     list_display = (
         "user",
         "salary_type",
-        "total_salary",
+        "change_type",
+        "amount",
+        "final_salary",
         "effective_from",
-        "is_increment",
         "created_at",
     )
-    list_filter = ("user", "salary_type", "is_increment", "effective_from", "created_at")
-    search_fields = ("user__first_name", "user__last_name", "user__email")
+
+    list_filter = (
+        "salary_type",
+        "change_type",
+        "effective_from",
+        "created_at",
+    )
+
+    search_fields = (
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+    )
+
     date_hierarchy = "effective_from"
-    readonly_fields = ("created_at", "updated_at")
-    
+
+    readonly_fields = (
+        "final_salary",
+        "created_at",
+        "updated_at",
+    )
+
     fieldsets = (
         ("Employee Information", {
             "fields": ("user",)
         }),
         ("Salary Details", {
-            "fields": ("salary_type", "base_salary", "total_salary")
-        }),
-        ("Additional Information", {
-            "fields": ("advance_amount", "is_increment")
+            "fields": (
+                "salary_type",
+                "change_type",
+                "amount",
+                "final_salary",
+            )
         }),
         ("Effective Period", {
             "fields": ("effective_from",)
         }),
         ("Timestamps", {
             "fields": ("created_at", "updated_at"),
-            "classes": ("collapse",)
+            "classes": ("collapse",),
         }),
     )
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.select_related("user")
-
+    
 @admin.register(SalaryTransaction)
 class SalaryTransactionAdmin(admin.ModelAdmin):
     list_display = (

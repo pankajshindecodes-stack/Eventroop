@@ -9,52 +9,48 @@ from .models import SalaryStructure, CustomUser, SalaryTransaction
 from .serializers import SalaryStructureSerializer
 from rest_framework import viewsets, status
 
-
 class SalaryStructureViewSet(viewsets.ModelViewSet):
     """
-    API ViewSet for managing SalaryStructure records.
-
-    Access Control:
-    - Superusers can view and manage all salary structures.
-    - Owners can view salary structures of users under their hierarchy
-      (staff and managers).
-    - Staff and managers can only view their own salary structure.
-
-    Features:
-    - Uses `user_id` as the URL lookup field.
-    - Supports filtering by:
-        - user_id
-        - salary_type
-        - is_increment
-        - effective_from
-    - Supports searching by user details:
-        - email
-        - first name
-        - last name
-        - mobile number
-    - Results are ordered by `effective_from` in descending order.
+    ViewSet for managing salary structures
     """
 
-    serializer_class = SalaryStructureSerializer    
-    filterset_fields = ['user_id','salary_type','is_increment','effective_from']
-    search_fields = ["user__email", "user__first_name", "user__last_name", "user__mobile_number"]
+    serializer_class = SalaryStructureSerializer
+    permission_classes = [IsAuthenticated]
+
+    filterset_fields = [
+        "user",
+        "salary_type",
+        "change_type",
+        "effective_from",
+    ]
+
+    search_fields = [
+        "user__email",
+        "user__first_name",
+        "user__last_name",
+        "user__mobile_number",
+    ]
 
     def get_queryset(self):
-        """Get queryset based on user hierarchy"""
+        """
+        Get queryset based on user hierarchy
+        """
         user = self.request.user
-        
+
         # Admin → see everything
         if user.is_superuser:
             queryset = SalaryStructure.objects.all()
+
         # Owner → see salary structures of their staff + managers
-        elif user.is_owner:
+        elif getattr(user, "is_owner", False):
             queryset = SalaryStructure.objects.filter(user__hierarchy__owner=user)
+
         # Staff or Manager → see only their own salary structure
         else:
             queryset = SalaryStructure.objects.filter(user=user)
-        
-        return queryset.select_related('user').order_by('-effective_from')
-    
+
+        return queryset.select_related("user").order_by("-effective_from")
+
 class SalaryTransactionView(APIView):
     """
     GET: Get salary payment history with filtering

@@ -3,6 +3,7 @@ from accounts.models import CustomUser
 from django.utils import timezone
 
 class SalaryStructure(models.Model):
+
     SALARY_TYPE_CHOICES = [
         ("HOURLY", "Hourly"),
         ("DAILY", "Daily"),
@@ -11,18 +12,41 @@ class SalaryStructure(models.Model):
         ("MONTHLY", "Monthly"),
     ]
 
+    SALARY_CHANGE_TYPE = [
+        ("BASE_SALARY", "Base Salary"),
+        ("INCREMENT", "Increment"),
+        ("ADVANCE", "Advance"),
+        ("LOAN", "Loan"),
+    ]
+
     user = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
         related_name="salary_structures"
     )
 
-    salary_type = models.CharField(max_length=20, choices=SALARY_TYPE_CHOICES, default="MONTHLY")
-    base_salary = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    total_salary = models.DecimalField(max_digits=12, decimal_places=2,default=0)
+    salary_type = models.CharField(
+        max_length=20,
+        choices=SALARY_TYPE_CHOICES,
+        default="MONTHLY"
+    )
 
-    advance_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    is_increment = models.BooleanField(default=False)
+    change_type = models.CharField(
+        max_length=20,
+        choices=SALARY_CHANGE_TYPE,
+        default="BASE_SALARY"
+    )
+
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    final_salary = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0
+    )
 
     effective_from = models.DateField()
 
@@ -32,9 +56,37 @@ class SalaryStructure(models.Model):
     class Meta:
         ordering = ["-effective_from"]
         unique_together = ("user", "effective_from")
+    def save(self, *args, **kwargs):
+        """
+        Salary calculation rules:
+        - BASE_SALARY → sets final_salary
+        - INCREMENT → final_salary = latest final_salary + increment
+        """
 
+        # Fetch last salary record before this effective date
+        previous = (
+            SalaryStructure.objects
+            .filter(user=self.user, effective_from__lt=self.effective_from)
+            .order_by("-effective_from")
+            .first()
+        )
+
+        previous_salary = previous.final_salary if previous else 0
+
+        if self.change_type == "BASE_SALARY":
+            self.final_salary = self.amount
+
+        elif self.change_type == "INCREMENT":
+            self.final_salary = previous_salary + self.amount
+
+        elif self.change_type in ["ADVANCE", "LOAN"]:
+            # Salary unchanged, deductions handled elsewhere if needed
+            self.final_salary = previous_salary
+
+        super().save(*args, **kwargs)
     def __str__(self):
-        return f"{self.user.get_full_name()} - {self.total_salary} from {self.effective_from}"
+        return f"{self.user.get_full_name()} - {self.final_salary} from {self.effective_from}"
+
 
 class SalaryTransaction(models.Model):
     """

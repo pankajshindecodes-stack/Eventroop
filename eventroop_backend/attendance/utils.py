@@ -82,90 +82,69 @@ class AttendanceCalculator:
 
 
 class SalaryCalculator:
-    """Calculate salary and remaining payable days."""
+    """Calculate salary based on attendance and salary structure."""
 
     HOURS_PER_DAY = 8
-    WORKING_DAYS_PER_WEEK = 7
-    WORKING_DAYS_PER_FORTNIGHT = 15
+    DAYS_PER_WEEK = 7
+    DAYS_PER_FORTNIGHT = 15
     DAYS_PER_MONTH = 30
 
     def __init__(self, user, salary_structure):
         self.user = user
-        self.salary_structure = salary_structure
+        self.salary = salary_structure
 
-    def _get_salary_type(self):
-        """Get salary type with fallback."""
-        return self.salary_structure.salary_type if self.salary_structure else "MONTHLY"
+    def _salary_type(self):
+        return self.salary.salary_type if self.salary else "MONTHLY"
 
     def get_period(self):
-        """Get period start and end dates based on salary type."""
         today = date.today()
-        salary_type = self._get_salary_type()
+        stype = self._salary_type()
 
-        if salary_type == "DAILY":
-            return today, today + timedelta(days=1)
+        if stype == "DAILY":
+            return today, today
 
-        if salary_type == "WEEKLY":
-            # Monday is 0, get start of week
+        if stype == "WEEKLY":
             start = today - timedelta(days=today.weekday())
-            return start, start + timedelta(days=7)
+            return start, start + timedelta(days=6)
 
-        if salary_type == "FORTNIGHTLY":
+        if stype == "FORTNIGHTLY":
             start = today - timedelta(days=today.weekday())
             return start, start + timedelta(days=14)
 
-        if salary_type == "MONTHLY":
-            # Get first and last day of current month using calendar
+        if stype == "MONTHLY":
             year, month = today.year, today.month
-            first_day = date(year, month, 1)
-            last_day_num = calendar.monthrange(year, month)[1]
-            last_day = date(year, month, last_day_num)
-            return first_day, last_day
+            first = date(year, month, 1)
+            last = date(year, month, calendar.monthrange(year, month)[1])
+            return first, last
 
-    def _get_daily_rate(self):
-        """Calculate daily base_salary based on salary type."""
-        if not self.salary_structure or not self.salary_structure.base_salary:
-            return 0
+        return today, today
 
-        base_salary = float(self.salary_structure.base_salary)
-        salary_type = self._get_salary_type()
+    def _daily_rate(self):
+        if not self.salary:
+            return Decimal("0")
+
+        final_salary = Decimal(self.salary.final_salary)
+        stype = self._salary_type()
 
         rate_map = {
-            "HOURLY": base_salary * self.HOURS_PER_DAY,
-            "DAILY": base_salary,
-            "WEEKLY": base_salary / self.WORKING_DAYS_PER_WEEK,
-            "FORTNIGHTLY": base_salary / self.WORKING_DAYS_PER_FORTNIGHT,
-            "MONTHLY": base_salary / self.DAYS_PER_MONTH,
+            "HOURLY": final_salary * self.HOURS_PER_DAY,
+            "DAILY": final_salary,
+            "WEEKLY": final_salary / self.DAYS_PER_WEEK,
+            "FORTNIGHTLY": final_salary / self.DAYS_PER_FORTNIGHT,
+            "MONTHLY": final_salary / self.DAYS_PER_MONTH,
         }
 
-        return round(rate_map.get(salary_type, base_salary / self.DAYS_PER_MONTH),2)
-
-    def _get_period_total_days(self, start_date, end_date):
-        """Calculate total days in a period."""
-        return (end_date - start_date).days + 1
+        return round(rate_map.get(stype, final_salary / self.DAYS_PER_MONTH),2)
 
     def calculate_salary(self, payable_days):
-        """Calculate current salary based on payable days."""
-        if not self.salary_structure:
-            return 0
-
-        daily_rate = self._get_daily_rate()
-        return round(float(payable_days) * daily_rate, 2)
+        daily_rate = self._daily_rate()
+        return round(Decimal(payable_days) * daily_rate, 2)
 
     def calculate_remaining_days(self, payable_days):
-        """Calculate remaining payable days in the period."""
-        if not self.salary_structure:
-            return 0
-
-        start_date, end_date = self.get_period()
-        total_days = self._get_period_total_days(start_date, end_date)
-        return max(0, total_days - payable_days)
+        start, end = self.get_period()
+        total_days = (end - start).days + 1
+        return max(0, total_days - int(payable_days))
 
     def calculate_remaining_salary(self, payable_days):
-        """Calculate remaining salary potential for remaining days."""
-        if not self.salary_structure:
-            return 0
-
         remaining_days = self.calculate_remaining_days(payable_days)
-        daily_rate = self._get_daily_rate()
-        return round(remaining_days * daily_rate, 2)
+        return round(Decimal(remaining_days) * self._daily_rate(), 2)

@@ -151,224 +151,177 @@ class AttendanceView(APIView):
                     status=status.HTTP_201_CREATED
                 )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class AttendanceReportAPIView(APIView):
-    """
-    Combined API endpoint to retrieve aggregated attendance reports.
-    
-    Permissions:
-    - Admin: see everything
-    - Owner: see attendance of their staff + managers (excluding themselves)
-    - Staff/Manager: see only their own attendance
-    
-    Query Parameters:
-    - user_id: Filter by user ID
-    - search: Search by user name or email
-    - start_date: Custom period start (YYYY-MM-DD)
-    - end_date: Custom period end (YYYY-MM-DD)
-    """
     permission_classes = [IsAuthenticated]
 
     def get_default_period(self):
-        """Get default period (current month)."""
         today = timezone.now().date()
-        start_date = today.replace(day=1)
-        end_date = (start_date + relativedelta(months=1)) - timedelta(days=1)
-        return start_date, end_date
+        start = today.replace(day=1)
+        end = (start + relativedelta(months=1)) - timedelta(days=1)
+        return start, end
 
     def get_queryset(self, user):
-        """Get queryset based on user permissions with optimizations."""
-        base_queryset = CustomUser.objects.select_related('hierarchy')
-        
+        qs = CustomUser.objects.select_related("hierarchy")
+
         if user.is_superuser:
-            return base_queryset.all()
-        
-        if hasattr(user, 'is_owner') and user.is_owner:
-            return base_queryset.filter(hierarchy__owner=user).exclude(id=user.id)
-        
-        return base_queryset.filter(id=user.id)
+            return qs
+
+        if getattr(user, "is_owner", False):
+            return qs.filter(hierarchy__owner=user).exclude(id=user.id)
+
+        return qs.filter(id=user.id)
 
     def apply_filters(self, queryset, request):
-        """Apply query parameter filters."""
-        filters = Q()
+        q = Q()
 
-        # Filter by user_id
-        user_id = request.query_params.get('user_id')
-        if user_id:
-            filters &= Q(id=user_id)
+        if uid := request.query_params.get("user_id"):
+            q &= Q(id=uid)
 
-        # Search by name or email
-        search = request.query_params.get('search')
-        if search:
-            filters &= Q(
+        if search := request.query_params.get("search"):
+            q &= (
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
                 Q(email__icontains=search) |
                 Q(employee_id__icontains=search)
             )
-        
-        if filters:
-            return queryset.filter(filters)
-        return queryset
+
+        return queryset.filter(q) if q else queryset
 
     def get_date_range(self, request):
-        """Get date range from query params or default to current month."""
-        start_date_str = request.query_params.get('start_date')
-        end_date_str = request.query_params.get('end_date')
-
-        if not all(start_date_str and end_date_str):
-            return self.get_default_period()
         try:
-            start_date = timezone.datetime.strptime(start_date_str, "%Y-%m-%d").date()
-            end_date = timezone.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+            start = request.query_params.get("start_date")
+            end = request.query_params.get("end_date")
+
+            if not start or not end:
+                return self.get_default_period()
+
+            start_date = timezone.datetime.strptime(start, "%Y-%m-%d").date()
+            end_date = timezone.datetime.strptime(end, "%Y-%m-%d").date()
 
             if end_date < start_date:
-                raise ValueError("end_date cannot be earlier than start_date")
+                raise ValueError("end_date cannot be before start_date")
+
             return start_date, end_date
         except ValueError as e:
-            raise ValueError(f"Invalid date input: {e}") from e
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-    def get_salary_structure(self, user, reference_date):
-        """Get the active salary structure for a user."""
-        return SalaryStructure.objects.filter(
-            user=user,
-            effective_from__lte=reference_date
-        ).order_by('-effective_from').first()
+    def get_salary_structure(self, user, ref_date):
+        return (
+            SalaryStructure.objects
+            .filter(user=user, effective_from__lte=ref_date)
+            .order_by("-effective_from")
+            .first()
+        )
 
-    def get_aggregated_attendance(self, user, start_date, end_date, salary_structure=None):
-        """Calculate aggregated attendance data for a user."""
-        # Get salary structure if not provided
-        if salary_structure is None:
-            salary_structure = self.get_salary_structure(user, timezone.now().date())
+    def build_salary_response(self, salary_calc, salary_structure, payable_days):
+        if not salary_structure:
+            return {
+                "salary_type": None,
+                "final_salary": 0,
+                "daily_rate": 0,
+                "current_payment": 0,
+                "remaining_payable_days": 0,
+                "remaining_payment": 0,
+            }
 
-        calculator = AttendanceCalculator(user, start_date, end_date)
-        attendance_data = calculator.calculate()
+        daily_rate = salary_calc._daily_rate()
+        current_payment = salary_calc.calculate_salary(payable_days)
+        remaining_days = salary_calc.calculate_remaining_days(payable_days)
+        remaining_payment = salary_calc.calculate_remaining_salary(payable_days)
 
-        payable_days = attendance_data.get('total_payable_days', 0)
+        return {
+            "salary_type": salary_structure.salary_type,
+            "daily_rate": float(daily_rate),
+            "current_payment": float(current_payment),
+            "remaining_payable_days": remaining_days,
+            "remaining_payment": float(remaining_payment),
+        }
+
+    def get_user_report(self, user, start_date, end_date, salary_structure=None):
+        if not salary_structure:
+            salary_structure = self.get_salary_structure(
+                user, timezone.now().date()
+            )
+
+        attendance_calc = AttendanceCalculator(user, start_date, end_date)
+        attendance = attendance_calc.calculate()
+
+        payable_days = attendance["total_payable_days"]
         salary_calc = SalaryCalculator(user, salary_structure)
 
         return {
             "user_id": user.id,
             "user_name": user.get_full_name(),
-            "employee_id": getattr(user, 'employee_id', None),
-            "attendance": attendance_data,
-            "salary": self._build_salary_response(salary_calc, salary_structure, payable_days)
-        }
-
-    def _build_salary_response(self, salary_calc, salary_structure, payable_days):
-        """Build salary response dictionary."""
-        if not salary_structure:
-            return {
-                "salary_structure": None,
-                "base_salary": 0,
-                "daily_rate": 0,
-                "current_payment": 0,
-                "remaining_payable_days": 0,
-                "remaining_payment": 0,
-                "total_salary": 0,
-                "advance_amount": 0
-            }
-
-        try:
-            daily_rate = salary_calc._get_daily_rate()
-            current_payment = salary_calc.calculate_salary(payable_days)
-            remaining_days = salary_calc.calculate_remaining_days(payable_days)
-            remaining_payment = salary_calc.calculate_remaining_salary(payable_days)
-        except Exception as e:
-            # Log the error here
-            return {
-                "salary_structure": salary_structure.salary_type,
-                "base_salary": float(salary_structure.base_salary),
-                "error": f"Calculation error: {str(e)}"
-            }
-
-        return {
-            "salary_structure": salary_structure.salary_type,
-            "base_salary": float(salary_structure.base_salary),
-            "daily_rate": float(daily_rate),
-            "current_payment": float(current_payment),
-            "remaining_payable_days": remaining_days,
-            "remaining_payment": float(remaining_payment),
-            "total_salary": float(salary_structure.total_salary),
-            "advance_amount": float(salary_structure.advance_amount)
+            "employee_id": getattr(user, "employee_id", None),
+            "attendance": attendance,
+            "salary": self.build_salary_response(
+                salary_calc, salary_structure, payable_days
+            ),
         }
 
     def get(self, request):
-        """Retrieve aggregated attendance reports."""
         start_date, end_date = self.get_date_range(request)
-        user_id = request.query_params.get('user_id')
+        user_id = request.query_params.get("user_id")
 
-        queryset = self.get_queryset(request.user)
-        queryset = self.apply_filters(queryset, request)
+        qs = self.apply_filters(
+            self.get_queryset(request.user),
+            request
+        )
 
-        # Single user report
+        # 🔹 Single user report
         if user_id:
             try:
-                target_user = queryset.get(id=user_id)
+                user = qs.get(id=user_id)
             except CustomUser.DoesNotExist:
                 return Response(
-                    {"status": "error", "message": "User not found or access denied"},
+                    {"status": "error", "message": "User not found"},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            report = self.get_aggregated_attendance(target_user, start_date, end_date)
             return Response(
                 {
                     "status": "success",
                     "period": {
-                        "start_date": start_date.isoformat(),
-                        "end_date": end_date.isoformat(),
-                        "month": start_date.strftime("%B %Y")
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "month": start_date.strftime("%B %Y"),
                     },
-                    "data": report
-                },
-                status=status.HTTP_200_OK
+                    "data": self.get_user_report(
+                        user, start_date, end_date
+                    ),
+                }
             )
 
-        # Multiple users report - optimize by prefetching salary structures
-        queryset = queryset.prefetch_related(
+        # 🔹 Multiple users (optimized)
+        qs = qs.prefetch_related(
             Prefetch(
-                'salary_structures',
+                "salary_structures",
                 queryset=SalaryStructure.objects.filter(
                     effective_from__lte=timezone.now().date()
-                ).order_by('-effective_from')[:1],
-                to_attr='current_salary'
+                ).order_by("-effective_from"),
+                to_attr="current_salary",
             )
         )
 
-        reports = []
-        for user in queryset:
-            try:
-                # Use prefetched salary structure
-                salary_structure = (
-                    user.current_salary[0]
-                    if hasattr(user, 'current_salary') 
-                    and user.current_salary 
-                    else None
-                )
-                
-                report = self.get_aggregated_attendance(
-                    user, start_date, end_date, salary_structure
-                )
-                reports.append(report)
-            except Exception as e:
-                # Log the error here
-                reports.append({
-                    "user_id": user.id,
-                    "user_name": user.get_full_name(),
-                    "error": str(e)
-                })
+        results = []
+        for user in qs:
+            salary = user.current_salary[0] if user.current_salary else None
+            results.append(
+                self.get_user_report(user, start_date, end_date, salary)
+            )
 
         return Response(
             {
                 "status": "success",
-                "count": len(reports),
+                "count": len(results),
                 "period": {
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_date.isoformat(),
-                    "month": start_date.strftime("%B %Y")
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "month": start_date.strftime("%B %Y"),
                 },
-                "results": reports
-            },
-            status=status.HTTP_200_OK
+                "results": results,
+            }
         )
