@@ -22,30 +22,30 @@ class Command(BaseCommand):
 
             salary_type = random.choice(SALARY_TYPES)
 
-            # Random rate based on salary type
+            # Random base_salary based on salary type
             if salary_type == "HOURLY":
-                rate = Decimal(random.randint(100, 1000))
+                base_salary = Decimal(random.randint(100, 1000))
             elif salary_type == "DAILY":
-                rate = Decimal(random.randint(500, 5000))
+                base_salary = Decimal(random.randint(500, 5000))
             elif salary_type == "WEEKLY":
-                rate = Decimal(random.randint(2000, 15000))
+                base_salary = Decimal(random.randint(2000, 15000))
             elif salary_type == "FORTNIGHTLY":
-                rate = Decimal(random.randint(4000, 30000))
+                base_salary = Decimal(random.randint(4000, 30000))
             else:  # MONTHLY
-                rate = Decimal(random.randint(10000, 100000))
+                base_salary = Decimal(random.randint(10000, 100000))
 
             advance = Decimal(random.randint(0, 5000))
             data = {
                 "user":user,
                 "salary_type":salary_type,
-                "rate":rate,
+                "base_salary":base_salary,
                 "advance_amount":advance,
                 "is_increment":False
             }
             list_Data.append(SalaryStructure(
                     user=user,
                     salary_type=salary_type,
-                    rate=rate,
+                    base_salary=base_salary,
                     advance_amount=advance,
                     is_increment=False,
                 ))

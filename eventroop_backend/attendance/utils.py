@@ -123,22 +123,22 @@ class SalaryCalculator:
             return first_day, last_day
 
     def _get_daily_rate(self):
-        """Calculate daily rate based on salary type."""
-        if not self.salary_structure or not self.salary_structure.rate:
+        """Calculate daily base_salary based on salary type."""
+        if not self.salary_structure or not self.salary_structure.base_salary:
             return 0
 
-        rate = float(self.salary_structure.rate)
+        base_salary = float(self.salary_structure.base_salary)
         salary_type = self._get_salary_type()
 
         rate_map = {
-            "HOURLY": rate * self.HOURS_PER_DAY,
-            "DAILY": rate,
-            "WEEKLY": rate / self.WORKING_DAYS_PER_WEEK,
-            "FORTNIGHTLY": rate / self.WORKING_DAYS_PER_FORTNIGHT,
-            "MONTHLY": rate / self.DAYS_PER_MONTH,
+            "HOURLY": base_salary * self.HOURS_PER_DAY,
+            "DAILY": base_salary,
+            "WEEKLY": base_salary / self.WORKING_DAYS_PER_WEEK,
+            "FORTNIGHTLY": base_salary / self.WORKING_DAYS_PER_FORTNIGHT,
+            "MONTHLY": base_salary / self.DAYS_PER_MONTH,
         }
 
-        return round(rate_map.get(salary_type, rate / self.DAYS_PER_MONTH),2)
+        return round(rate_map.get(salary_type, base_salary / self.DAYS_PER_MONTH),2)
 
     def _get_period_total_days(self, start_date, end_date):
         """Calculate total days in a period."""

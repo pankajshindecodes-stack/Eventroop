@@ -24,7 +24,7 @@ class SalaryStructureAdmin(admin.ModelAdmin):
             "fields": ("user",)
         }),
         ("Salary Details", {
-            "fields": ("salary_type", "rate", "total_salary")
+            "fields": ("salary_type", "base_salary", "total_salary")
         }),
         ("Additional Information", {
             "fields": ("advance_amount", "is_increment")

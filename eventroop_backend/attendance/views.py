@@ -260,7 +260,7 @@ class AttendanceReportAPIView(APIView):
         if not salary_structure:
             return {
                 "salary_structure": None,
-                "rate": 0,
+                "base_salary": 0,
                 "daily_rate": 0,
                 "current_payment": 0,
                 "remaining_payable_days": 0,
@@ -278,13 +278,13 @@ class AttendanceReportAPIView(APIView):
             # Log the error here
             return {
                 "salary_structure": salary_structure.salary_type,
-                "rate": float(salary_structure.rate),
+                "base_salary": float(salary_structure.base_salary),
                 "error": f"Calculation error: {str(e)}"
             }
 
         return {
             "salary_structure": salary_structure.salary_type,
-            "rate": float(salary_structure.rate),
+            "base_salary": float(salary_structure.base_salary),
             "daily_rate": float(daily_rate),
             "current_payment": float(current_payment),
             "remaining_payable_days": remaining_days,

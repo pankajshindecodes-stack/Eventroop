@@ -19,7 +19,7 @@ class SalaryStructureSerializer(serializers.ModelSerializer):
             'id',
             'user',
             'salary_type',
-            'rate',
+            'base_salary',
             'advance_amount',
             'is_increment',
             'effective_from',
