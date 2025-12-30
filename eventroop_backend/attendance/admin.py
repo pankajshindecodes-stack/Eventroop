@@ -24,8 +24,6 @@ class AttendanceStatusAdmin(admin.ModelAdmin):
     ordering = ("owner", "label")
     list_per_page = 25
  
-
-
 # ------------------------------------------
 # Custom Filters
 # ------------------------------------------
@@ -58,11 +56,143 @@ class YearFilter(admin.SimpleListFilter):
         return queryset
 
 
+class UserFilter(admin.SimpleListFilter):
+    title = "User"
+    parameter_name = "user"
+
+    def lookups(self, request, model_admin):
+        users = (
+            Attendance.objects.values_list("user__id", "user__first_name", "user__last_name")
+            .distinct()
+            .order_by("user__first_name", "user__last_name")
+        )
+        return [
+            (user_id, f"{first_name} {last_name}".strip())
+            for user_id, first_name, last_name in users
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(user__id=self.value())
+        return queryset
+
+
 # ------------------------------------------
 # Attendance Admin
 # ------------------------------------------
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "date",
+        "status_editable",
+        "formatted_duration",
+        "created_at",
+    )
+
+    list_filter = (
+        UserFilter,
+        "status",
+        MonthFilter,
+        YearFilter,
+    )
+
+    search_fields = (
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+    )
+
+    ordering = ("-date",)
+    date_hierarchy = "date"
+    readonly_fields = ("created_at", "updated_at")
+    autocomplete_fields = ("user",)
+    list_select_related = ("user", "status")
+
+    list_per_page = 30
+
+    # ------------------------------------------
+    # Display helpers
+    # ------------------------------------------
+    @admin.display(description="Status")
+    def status_editable(self, obj):
+        statuses = AttendanceStatus.objects.filter(is_active=True)
+        options = "".join(
+            [
+                f'<option value="{s.id}" {"selected" if obj.status.id == s.id else ""}>{s.label}</option>'
+                for s in statuses
+            ]
+        )
+        return format_html(
+            '<select data-id="{}" class="status-select" style="padding: 5px; border-radius: 4px;">{}</select>',
+            obj.id,
+            format_html(options),
+        )
+
+    status_editable.short_description = "Status"
+
+    @admin.display(description="Duration (hrs)")
+    def formatted_duration(self, obj):
+        if obj.duration:
+            hours = obj.duration.total_seconds() / 3600
+            return f"{hours:.2f}"
+        return "-"
+
+    # ------------------------------------------
+    # Bulk Actions
+    # ------------------------------------------
+    def changeform_add_ons(self):
+        return """
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const selects = document.querySelectorAll('.status-select');
+            selects.forEach(select => {
+                select.addEventListener('change', function() {
+                    const attendanceId = this.getAttribute('data-id');
+                    const statusId = this.value;
+                    const row = this.closest('tr');
+                    
+                    fetch(`/admin/attendance/attendance/${attendanceId}/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                        },
+                        body: JSON.stringify({ status: statusId })
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            row.style.backgroundColor = '#e8f5e9';
+                            setTimeout(() => row.style.backgroundColor = '', 1000);
+                        } else {
+                            alert('Failed to update status');
+                            location.reload();
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Error:', err);
+                        alert('Error updating status');
+                    });
+                });
+            });
+        });
+        </script>
+        """
+
+    class Media:
+        js = ('admin/js/status-update.js',)
+        css = {'all': ('admin/css/status-update.css',)}
+
+    # ------------------------------------------
+    # Permissions
+    # ------------------------------------------
+    def has_delete_permission(self, request, obj=None):
+        # Prevent accidental deletes
+        return request.user.is_superuser
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.select_related("user", "status")
     list_display = (
         "user",
         "date",
@@ -72,6 +202,7 @@ class AttendanceAdmin(admin.ModelAdmin):
     )
 
     list_filter = (
+        UserFilter,
         "status",
         MonthFilter,
         YearFilter,

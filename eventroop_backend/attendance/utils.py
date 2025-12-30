@@ -1,3 +1,4 @@
+import calendar
 from datetime import date, timedelta
 from django.db.models import Sum
 from decimal import Decimal
@@ -5,24 +6,13 @@ from decimal import Decimal
 class AttendanceCalculator:
     """Calculate attendance metrics for a user over a period."""
 
-    SALARY_TYPE_DAILY = "DAILY"
-    SALARY_TYPE_WEEKLY = "WEEKLY"
-    SALARY_TYPE_FORTNIGHTLY = "FORTNIGHTLY"
-    SALARY_TYPE_MONTHLY = "MONTHLY"
-    SALARY_TYPE_HOURLY = "HOURLY"
-
-    STATUS_PRESENT = "P"
-    STATUS_ABSENT = "A"
-    STATUS_HALF_DAY = "HD"
-    STATUS_PAID_LEAVE = "PL"
-
     def __init__(self, user, start_date=None, end_date=None):
         self.user = user
         self.start_date = start_date
         self.end_date = end_date
         self.records = self._get_records()
         self.status_codes = self._load_status_codes()
-        
+
     def _get_records(self):
         """Get attendance records for the period."""
         from .models import Attendance
@@ -40,15 +30,15 @@ class AttendanceCalculator:
     def _load_status_codes(self):
         """Load attendance status codes."""
         from .models import AttendanceStatus
-        
-        status_query  = AttendanceStatus.objects.filter(owner=self.user.hierarchy.owner)
+        status_query = AttendanceStatus.objects.filter(owner__is_superuser=True)
+
         return {
-            'absent': status_query.filter(label__icontains="absent",is_active=True).first(),
-            'present': status_query.filter(label__icontains="present",is_active=True).first(),
-            'paid_leave': status_query.filter(label__icontains="paid_leave",is_active=True).first(),
-            'half_day': status_query.filter(label__icontains="half_day",is_active=True).first(),
-            'weekly_Off': status_query.filter(label__icontains="weekly_Off",is_active=True).first(),
-            'unpaid_leave': status_query.filter(label__icontains="unpaid_leave",is_active=True).first(),
+            'absent': status_query.filter(code__icontains="ABSENT",is_active=True).first(),
+            'present': status_query.filter(code__icontains="PRESENT",is_active=True).first(),
+            'paid_leave': status_query.filter(code__icontains="PAID-LEAVE",is_active=True).first(),
+            'half_day': status_query.filter(code__icontains="HALF-DAY",is_active=True).first(),
+            'weekly_Off': status_query.filter(code__icontains="WEEKLY-OFF",is_active=True).first(),
+            'unpaid_leave': status_query.filter(code__icontains="UNPAID-LEAVE",is_active=True).first(),
         }
 
     def _count_status(self, status_obj):
@@ -68,12 +58,7 @@ class AttendanceCalculator:
         return Decimal(total_seconds) / Decimal(3600)
 
     def calculate(self):
-        """Calculate all attendance metrics."""
-        'absent'
-        'present'
-        'paid_leave'
-        'half_day'
-        
+        """Calculate all attendance metrics."""        
         absent = self._count_status(self.status_codes['absent'])
         present = self._count_status(self.status_codes['present'])
         paid_leave = self._count_status(self.status_codes['paid_leave'])
@@ -100,8 +85,8 @@ class SalaryCalculator:
     """Calculate salary and remaining payable days."""
 
     HOURS_PER_DAY = 8
-    WORKING_DAYS_PER_WEEK = 6
-    WORKING_DAYS_PER_FORTNIGHT = 12
+    WORKING_DAYS_PER_WEEK = 7
+    WORKING_DAYS_PER_FORTNIGHT = 15
     DAYS_PER_MONTH = 30
 
     def __init__(self, user, salary_structure):
@@ -121,6 +106,7 @@ class SalaryCalculator:
             return today, today + timedelta(days=1)
 
         if salary_type == "WEEKLY":
+            # Monday is 0, get start of week
             start = today - timedelta(days=today.weekday())
             return start, start + timedelta(days=7)
 
@@ -128,92 +114,13 @@ class SalaryCalculator:
             start = today - timedelta(days=today.weekday())
             return start, start + timedelta(days=14)
 
-        # MONTHLY
-        start = date(today.year, today.month, 1)
-        return start, start + timedelta(days=30)
-
-    def _get_daily_rate(self):
-        """Calculate daily rate based on salary type."""
-        if not self.salary_structure or not self.salary_structure.rate:
-            return 0
-
-        rate = float(self.salary_structure.rate)
-        salary_type = self._get_salary_type()
-
-        rate_map = {
-            "HOURLY": rate * self.HOURS_PER_DAY,
-            "DAILY": rate,
-            "WEEKLY": rate / self.WORKING_DAYS_PER_WEEK,
-            "FORTNIGHTLY": rate / self.WORKING_DAYS_PER_FORTNIGHT,
-            "MONTHLY": rate / self.DAYS_PER_MONTH,
-        }
-
-        return rate_map.get(salary_type, rate / self.DAYS_PER_MONTH)
-
-    def _get_period_total_days(self, start_date, end_date):
-        """Calculate total days in a period."""
-        return (end_date - start_date).days + 1
-
-    def calculate_salary(self, payable_days):
-        """Calculate current salary based on payable days."""
-        if not self.salary_structure:
-            return 0
-
-        daily_rate = self._get_daily_rate()
-        return round(float(payable_days) * daily_rate, 2)
-
-    def calculate_remaining_days(self, payable_days):
-        """Calculate remaining payable days in the period."""
-        if not self.salary_structure:
-            return 0
-
-        start_date, end_date = self.get_period()
-        total_days = self._get_period_total_days(start_date, end_date)
-        return max(0, total_days - payable_days)
-
-    def calculate_remaining_salary(self, payable_days):
-        """Calculate remaining salary potential for remaining days."""
-        if not self.salary_structure:
-            return 0
-
-        remaining_days = self.calculate_remaining_days(payable_days)
-        daily_rate = self._get_daily_rate()
-        return round(remaining_days * daily_rate, 2)
-
-    """Calculate salary and remaining payable days."""
-
-    HOURS_PER_DAY = 8
-    WORKING_DAYS_PER_WEEK = 6
-    WORKING_DAYS_PER_FORTNIGHT = 12
-    DAYS_PER_MONTH = 30
-
-    def __init__(self, user, salary_structure):
-        self.user = user
-        self.salary_structure = salary_structure
-
-    def _get_salary_type(self):
-        """Get salary type with fallback."""
-        return self.salary_structure.salary_type if self.salary_structure else "MONTHLY"
-
-    def get_period(self):
-        """Get period start and end dates based on salary type."""
-        today = date.today()
-        salary_type = self._get_salary_type()
-
-        if salary_type == "DAILY":
-            return today, today + timedelta(days=1)
-
-        if salary_type == "WEEKLY":
-            start = today - timedelta(days=today.weekday())
-            return start, start + timedelta(days=7)
-
-        if salary_type == "FORTNIGHTLY":
-            start = today - timedelta(days=today.weekday())
-            return start, start + timedelta(days=14)
-
-        # MONTHLY
-        start = date(today.year, today.month, 1)
-        return start, start + timedelta(days=30)
+        if salary_type == "MONTHLY":
+            # Get first and last day of current month using calendar
+            year, month = today.year, today.month
+            first_day = date(year, month, 1)
+            last_day_num = calendar.monthrange(year, month)[1]
+            last_day = date(year, month, last_day_num)
+            return first_day, last_day
 
     def _get_daily_rate(self):
         """Calculate daily rate based on salary type."""

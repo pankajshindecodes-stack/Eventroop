@@ -1,24 +1,17 @@
-
-# urls.py
 from django.urls import path
-from .views import (
-    SalaryStructureListCreateView,
-    SalaryStructureDetailView,
-    SalaryIncrementView,
-    CurrentSalaryView,
-    SalaryHistoryView
-)
-app_name = 'payroll'
+from . import views
+
+app_name = 'salary'
 
 urlpatterns = [
-    # Salary structure CRUD
-    path('salary-structures/', SalaryStructureListCreateView.as_view(), name='salary-structure-list-create'),
-    path('salary-structures/<int:pk>/', SalaryStructureDetailView.as_view(), name='salary-structure-detail'),
+    # Salary Structure endpoints
+    path('structures/', views.SalaryStructureListCreateView.as_view(), name='salary-structure-list-create'),
+    path('structures/<int:pk>/', views.SalaryStructureDetailView.as_view(), name='salary-structure-detail'),
     
-    # Salary increment
-    path('salary-structures/increment/', SalaryIncrementView.as_view(), name='salary-increment'),
+    # Salary Increment endpoint
+    path('increment/', views.SalaryIncrementView.as_view(), name='salary-increment'),
     
-    # Current salary and history
-    path('salary-structures/current/', CurrentSalaryView.as_view(), name='current-salary'),
-    path('salary-structures/history/', SalaryHistoryView.as_view(), name='salary-history'),
+    # Salary Transaction endpoints
+    path('transactions/', views.SalaryTransactionView.as_view(), name='salary-transaction-list-create'),
+    path('transactions/<uuid:transaction_id>/mark-paid/', views.MarkSalaryAsPaidView.as_view(), name='salary-transaction-mark-paid'),
 ]
