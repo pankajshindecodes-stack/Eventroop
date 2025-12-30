@@ -19,7 +19,7 @@ class SalaryStructure(models.Model):
 
     salary_type = models.CharField(max_length=20, choices=SALARY_TYPE_CHOICES, default="MONTHLY")
     base_salary = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    total_salary = models.DecimalField(max_digits=12, decimal_places=2)
+    total_salary = models.DecimalField(max_digits=12, decimal_places=2,default=0)
 
     advance_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_increment = models.BooleanField(default=False)
