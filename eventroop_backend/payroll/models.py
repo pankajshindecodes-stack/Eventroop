@@ -56,13 +56,21 @@ class SalaryStructure(models.Model):
     class Meta:
         ordering = ["-effective_from"]
         unique_together = ("user", "effective_from")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(change_type="BASE_SALARY"),
+                name="unique_base_salary_per_user"
+            )
+        ]
+
     def save(self, *args, **kwargs):
         """
         Salary calculation rules:
         - BASE_SALARY → sets final_salary
         - INCREMENT → final_salary = latest final_salary + increment
         """
-
+        self.full_clean()
         # Fetch last salary record before this effective date
         previous = (
             SalaryStructure.objects
@@ -84,6 +92,7 @@ class SalaryStructure(models.Model):
             self.final_salary = previous_salary
 
         super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.final_salary} from {self.effective_from}"
 
