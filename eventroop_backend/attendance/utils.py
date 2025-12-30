@@ -138,7 +138,7 @@ class SalaryCalculator:
             "MONTHLY": rate / self.DAYS_PER_MONTH,
         }
 
-        return rate_map.get(salary_type, rate / self.DAYS_PER_MONTH)
+        return round(rate_map.get(salary_type, rate / self.DAYS_PER_MONTH),2)
 
     def _get_period_total_days(self, start_date, end_date):
         """Calculate total days in a period."""
