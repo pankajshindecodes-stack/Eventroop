@@ -18,7 +18,7 @@ class SalaryStructureViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     filterset_fields = [
-        "user",
+        "user_id",
         "salary_type",
         "change_type",
         "effective_from",
@@ -48,7 +48,7 @@ class SalaryStructureViewSet(viewsets.ModelViewSet):
         # Staff or Manager → see only their own salary structure
         else:
             queryset = SalaryStructure.objects.filter(user=user)
-
+            print(queryset)
         return queryset.select_related("user").order_by("-effective_from")
 
 class SalaryTransactionView(APIView):
