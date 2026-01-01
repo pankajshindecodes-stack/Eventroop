@@ -197,16 +197,35 @@ class AttendanceReportAPIView(APIView):
                 )
         return start_date, end_date
 
-    def get_all_period_reports(self, user, start_date=None, end_date=None):
+    def get_reports_from_db(self, user, start_date=None, end_date=None):
         """
-        Returns all payroll reports for a user:
-        - If start_date/end_date provided, restrict to that range
-        - Otherwise, automatically from first attendance to today
+        Fetch reports from database. These are always up-to-date
+        because signals update them whenever attendance changes.
         """
-        payroll = PayrollCalculator(user)
+        queryset = AttendanceReport.objects.filter(user=user)
+        
         if start_date and end_date:
-            return payroll.calculate_all_periods_auto(start_date=start_date, end_date=end_date)
-        return payroll.calculate_all_periods_auto()  # all periods automatically
+            queryset = queryset.filter(
+                start_date__gte=start_date,
+                end_date__lte=end_date
+            )
+        
+        return list(queryset.values(
+            'start_date',
+            'end_date',
+            'present_days',
+            'absent_days',
+            'half_day_count',
+            'paid_leave_days',
+            'weekly_Offs',
+            'unpaid_leaves',
+            'total_payable_days',
+            'total_payable_hours',
+            'salary_type',
+            'final_salary',
+            'daily_rate',
+            'current_payment',
+        ))
 
     def get(self, request):
         start_date, end_date = self.get_date_range(request)
@@ -226,7 +245,8 @@ class AttendanceReportAPIView(APIView):
                     status=404
                 )
 
-            reports = self.get_all_period_reports(user, start_date, end_date)
+            reports = self.get_reports_from_db(user, start_date, end_date)
+            
             return Response(
                 {
                     "status": "success",
@@ -248,7 +268,7 @@ class AttendanceReportAPIView(APIView):
 
         results = []
         for user in qs:
-            reports = self.get_all_period_reports(user, start_date, end_date)
+            reports = self.get_reports_from_db(user, start_date, end_date)
             results.append({"user_id": user.id, "reports": reports})
 
         return Response(
