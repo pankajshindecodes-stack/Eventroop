@@ -72,3 +72,42 @@ class Attendance(models.Model):
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.date} ({self.status.label})"
 
+class AttendanceReport(models.Model):
+    """Pre-calculated attendance and salary report stored in database"""
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='attendance_reports')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    
+    # Attendance data
+    present_days = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    absent_days = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    half_day_count = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    paid_leave_days = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    weekly_Offs = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    unpaid_leaves = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_payable_days = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_payable_hours = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    
+    # Salary data
+    salary_type = models.CharField(max_length=50, null=True, blank=True)
+    final_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    daily_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    current_payment = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    remaining_payable_days = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    remaining_payment = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('user', 'start_date', 'end_date')
+        indexes = [
+            models.Index(fields=['user', 'start_date', 'end_date']),
+            models.Index(fields=['user', 'updated_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.get_full_name()} - {self.start_date} to {self.end_date}"
+

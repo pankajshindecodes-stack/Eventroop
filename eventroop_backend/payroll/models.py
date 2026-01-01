@@ -71,10 +71,11 @@ class SalaryStructure(models.Model):
         - INCREMENT → final_salary = latest final_salary + increment
         """
         self.full_clean()
-        # Fetch last salary record before this effective date
+        # Fetch last salary record before this effective date (excluding current record)
         previous = (
             SalaryStructure.objects
-            .filter(user=self.user, effective_from__lt=self.effective_from)
+            .filter(user=self.user, effective_from__lte=self.effective_from)
+            .exclude(pk=self.pk)  # Exclude current record
             .order_by("-effective_from")
             .first()
         )
@@ -92,10 +93,6 @@ class SalaryStructure(models.Model):
             self.final_salary = previous_salary
 
         super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"{self.user.get_full_name()} - {self.final_salary} from {self.effective_from}"
-
 
 class SalaryTransaction(models.Model):
     """

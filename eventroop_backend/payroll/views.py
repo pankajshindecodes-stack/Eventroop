@@ -48,7 +48,6 @@ class SalaryStructureViewSet(viewsets.ModelViewSet):
         # Staff or Manager → see only their own salary structure
         else:
             queryset = SalaryStructure.objects.filter(user=user)
-            print(queryset)
         return queryset.select_related("user").order_by("-effective_from")
 
 class SalaryTransactionView(APIView):

@@ -2,8 +2,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.db.models import Sum
 from django.utils.timezone import now
-
-from .models import AttendanceStatus, Attendance
+from django.urls import reverse
+from .models import AttendanceStatus, Attendance,AttendanceReport
 
 
 # ------------------------------------------
@@ -279,3 +279,73 @@ class AttendanceAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.select_related("user", "status")
+
+
+@admin.register(AttendanceReport)
+class AttendanceReportAdmin(admin.ModelAdmin):
+    # Fields to display in the list view
+    list_display = (
+        'user', 
+        'start_date', 
+        'end_date', 
+        'total_payable_days', 
+        'total_payable_hours', 
+        'final_salary', 
+        'current_payment',
+        'created_at',
+        'updated_at',
+    )
+
+    # Fields to filter in the sidebar
+    list_filter = (
+        'salary_type',
+        'start_date',
+        'end_date',
+        'created_at',
+        'updated_at',
+    )
+
+    # Fields searchable via search bar
+    search_fields = (
+        'user__first_name', 
+        'user__last_name', 
+        'user__email'
+    )
+
+    # Default ordering
+    ordering = ('-start_date', '-end_date')
+
+    # Make some fields read-only
+    readonly_fields = ('created_at', 'updated_at')
+
+    # Optional: group fields into sections
+    fieldsets = (
+        ('User & Period', {
+            'fields': ('user', 'start_date', 'end_date')
+        }),
+        ('Attendance Data', {
+            'fields': (
+                'present_days', 
+                'absent_days', 
+                'half_day_count', 
+                'paid_leave_days',
+                'weekly_Offs',
+                'unpaid_leaves',
+                'total_payable_days',
+                'total_payable_hours',
+            )
+        }),
+        ('Salary Data', {
+            'fields': (
+                'salary_type',
+                'final_salary',
+                'daily_rate',
+                'current_payment',
+                'remaining_payable_days',
+                'remaining_payment',
+            )
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )

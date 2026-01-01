@@ -1,10 +1,9 @@
 # Django
-from datetime import date, timedelta
+from datetime import datetime
 from django.db.models import Q,Prefetch
 from django.utils import timezone
 
 # Third-party
-from dateutil.relativedelta import relativedelta
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,13 +15,13 @@ from accounts.models import CustomUser
 from payroll.models import SalaryStructure
 
 # Attendance app
-from .models import Attendance, AttendanceStatus
+from .models import Attendance, AttendanceStatus,AttendanceReport
 from .serializers import (
     AttendanceSerializer,
     AttendanceStatusSerializer,
 )
 from .permissions import IsSuperUserOrOwnerOrReadOnly
-from .utils import SalaryCalculator, AttendanceCalculator
+from .utils import PayrollCalculator
 from django.db.models import Q
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
@@ -155,29 +154,18 @@ class AttendanceView(APIView):
 class AttendanceReportAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_default_period(self):
-        today = timezone.now().date()
-        start = today.replace(day=1)
-        end = (start + relativedelta(months=1)) - timedelta(days=1)
-        return start, end
-
     def get_queryset(self, user):
         qs = CustomUser.objects.select_related("hierarchy")
-
         if user.is_superuser:
             return qs
-
         if getattr(user, "is_owner", False):
             return qs.filter(hierarchy__owner=user).exclude(id=user.id)
-
         return qs.filter(id=user.id)
 
     def apply_filters(self, queryset, request):
         q = Q()
-
         if uid := request.query_params.get("user_id"):
             q &= Q(id=uid)
-
         if search := request.query_params.get("search"):
             q &= (
                 Q(first_name__icontains=search) |
@@ -185,119 +173,69 @@ class AttendanceReportAPIView(APIView):
                 Q(email__icontains=search) |
                 Q(employee_id__icontains=search)
             )
-
         return queryset.filter(q) if q else queryset
 
     def get_date_range(self, request):
-        try:
-            start = request.query_params.get("start_date")
-            end = request.query_params.get("end_date")
+        """
+        Returns start_date and end_date from query params, or None if not provided.
+        """
+        start = request.query_params.get("start_date")
+        end = request.query_params.get("end_date")
+        start_date, end_date = None, None
 
-            if not start or not end:
-                return self.get_default_period()
+        if start and end:
+            try:
+                start_date = datetime.strptime(start, "%Y-%m-%d").date()
+                end_date = datetime.strptime(end, "%Y-%m-%d").date()
 
-            start_date = timezone.datetime.strptime(start, "%Y-%m-%d").date()
-            end_date = timezone.datetime.strptime(end, "%Y-%m-%d").date()
+                if end_date < start_date:
+                    raise ValueError("end_date cannot be before start_date")
+            except ValueError as e:
+                return Response(
+                    {"status": "error", "message": str(e)},
+                    status=400
+                )
+        return start_date, end_date
 
-            if end_date < start_date:
-                raise ValueError("end_date cannot be before start_date")
-
-            return start_date, end_date
-        except ValueError as e:
-            return Response(
-                {"status": "error", "message": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-    def get_salary_structure(self, user, ref_date):
-        return (
-            SalaryStructure.objects
-            .filter(user=user, effective_from__lte=ref_date)
-            .order_by("-effective_from")
-            .first()
-        )
-
-    def build_salary_response(self, salary_calc, salary_structure, payable_days):
-        if not salary_structure:
-            return {
-                "salary_type": None,
-                "final_salary": 0,
-                "daily_rate": 0,
-                "current_payment": 0,
-                "remaining_payable_days": 0,
-                "remaining_payment": 0,
-            }
-
-        daily_rate = salary_calc._daily_rate()
-        current_payment = salary_calc.calculate_salary(payable_days)
-        remaining_days = salary_calc.calculate_remaining_days(payable_days)
-        remaining_payment = salary_calc.calculate_remaining_salary(payable_days)
-
-        return {
-            "salary_type": salary_structure.salary_type,
-            "final_salary": salary_structure.final_salary,
-            "daily_rate": float(daily_rate),
-            "current_payment": float(current_payment),
-            "remaining_payable_days": remaining_days,
-            "remaining_payment": float(remaining_payment),
-        }
-
-    def get_user_report(self, user, start_date, end_date, salary_structure=None):
-        if not salary_structure:
-            salary_structure = self.get_salary_structure(
-                user, timezone.now().date()
-            )
-
-        attendance_calc = AttendanceCalculator(user, start_date, end_date)
-        attendance = attendance_calc.calculate()
-
-        payable_days = attendance["total_payable_days"]
-        salary_calc = SalaryCalculator(user, salary_structure)
-
-        return {
-            "user_id": user.id,
-            "user_name": user.get_full_name(),
-            "employee_id": getattr(user, "employee_id", None),
-            "attendance": attendance,
-            "salary": self.build_salary_response(
-                salary_calc, salary_structure, payable_days
-            ),
-        }
+    def get_all_period_reports(self, user, start_date=None, end_date=None):
+        """
+        Returns all payroll reports for a user:
+        - If start_date/end_date provided, restrict to that range
+        - Otherwise, automatically from first attendance to today
+        """
+        payroll = PayrollCalculator(user)
+        if start_date and end_date:
+            return payroll.calculate_all_periods_auto(start_date=start_date, end_date=end_date)
+        return payroll.calculate_all_periods_auto()  # all periods automatically
 
     def get(self, request):
         start_date, end_date = self.get_date_range(request)
+        if isinstance(start_date, Response):  # Error response from get_date_range
+            return start_date
+
         user_id = request.query_params.get("user_id")
+        qs = self.apply_filters(self.get_queryset(request.user), request)
 
-        qs = self.apply_filters(
-            self.get_queryset(request.user),
-            request
-        )
-
-        # 🔹 Single user report
+        # 🔹 Single user
         if user_id:
             try:
                 user = qs.get(id=user_id)
             except CustomUser.DoesNotExist:
                 return Response(
                     {"status": "error", "message": "User not found"},
-                    status=status.HTTP_404_NOT_FOUND
+                    status=404
                 )
 
+            reports = self.get_all_period_reports(user, start_date, end_date)
             return Response(
                 {
                     "status": "success",
-                    "period": {
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "month": start_date.strftime("%B %Y"),
-                    },
-                    "data": self.get_user_report(
-                        user, start_date, end_date
-                    ),
+                    "user_id": user.id,
+                    "reports": reports,
                 }
             )
 
-        # 🔹 Multiple users (optimized)
+        # 🔹 Multiple users
         qs = qs.prefetch_related(
             Prefetch(
                 "salary_structures",
@@ -310,20 +248,13 @@ class AttendanceReportAPIView(APIView):
 
         results = []
         for user in qs:
-            salary = user.current_salary[0] if user.current_salary else None
-            results.append(
-                self.get_user_report(user, start_date, end_date, salary)
-            )
+            reports = self.get_all_period_reports(user, start_date, end_date)
+            results.append({"user_id": user.id, "reports": reports})
 
         return Response(
             {
                 "status": "success",
                 "count": len(results),
-                "period": {
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "month": start_date.strftime("%B %Y"),
-                },
                 "results": results,
             }
         )
