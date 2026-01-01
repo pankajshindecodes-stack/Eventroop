@@ -151,19 +151,11 @@ class PayrollCalculator:
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
 
-        total_days = (end_date - start_date).days + 1
-        remaining_days = max(Decimal("0"), Decimal(total_days) - payable_days)
-        remaining_payment = (remaining_days * daily_rate).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-
         return {
             "salary_type": salary_type,
             "final_salary": salary_obj.final_salary if salary_obj else 0,
-            "daily_rate": daily_rate,
-            "current_payment": current_payment,
-            "remaining_payable_days": remaining_days,
-            "remaining_payment": remaining_payment,
+            "daily_rate": float(daily_rate),
+            "current_payment": float(current_payment),
         }
 
     # --------------------------------------------------
@@ -263,6 +255,7 @@ class PayrollCalculator:
             total_payable_days = Decimal("0")
             total_payable_hours = Decimal("0")
             total_current_payment = Decimal("0")
+            final_daily_rate = Decimal("0")
 
             for salary, salary_type, period_start, period_end in salary_periods:
                 attendance = self._calculate_attendance(period_start, period_end)
@@ -276,7 +269,8 @@ class PayrollCalculator:
                 total_unpaid_leaves += attendance["unpaid_leaves"]
                 total_payable_days += attendance["total_payable_days"]
                 total_payable_hours += Decimal(str(attendance["total_payable_hours"]))
-                total_current_payment += salary_calc["current_payment"]
+                final_daily_rate = Decimal(str(salary_calc["daily_rate"]))
+                total_current_payment += Decimal(str(salary_calc["current_payment"]))
 
             return {
                 "start_date": start_date,
@@ -291,10 +285,8 @@ class PayrollCalculator:
                 "total_payable_hours": float(total_payable_hours),
                 "salary_type": salary_type,
                 "final_salary": (salary.final_salary if salary else 0),
+                "daily_rate": float(final_daily_rate),
                 "current_payment": float(total_current_payment),
-                "remaining_payable_days": 0,
-                "remaining_payment": 0.0,
-                "daily_rate": 0,
             }
 
     def calculate_all_periods_auto(self, start_date=None, end_date=None):
