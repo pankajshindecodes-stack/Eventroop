@@ -5,8 +5,8 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from attendance.models import CustomUser, AttendanceReport
-from attendance.utils import PayrollCalculator
-
+from attendance.utils import AttendanceCalculator
+from decimal import Decimal
 
 class Command(BaseCommand):
     help = 'Generate attendance reports for all users'
@@ -20,32 +20,30 @@ class Command(BaseCommand):
         date_str = options.get('date')
         
         if user_id:
-            users = CustomUser.objects.filter(id=user_id)
+            users = CustomUser.objects.get_all_managers_under_owner(user_id)
+            
         else:
             users = CustomUser.objects.all()
         
         for user in users:
-            payroll = PayrollCalculator(user)
-            reports = payroll.calculate_all_periods_auto()
+            payroll = AttendanceCalculator(user)
+            reports = payroll.get_all_periods_attendance()
             
             for report in reports:
                 AttendanceReport.objects.update_or_create(
                     user=user,
                     start_date=report["start_date"],
                     end_date=report["end_date"],
+                    period_type=report["period_type"],
                     defaults={
-                        "present_days": report.get("present_days", 0),
-                        "absent_days": report.get("absent_days", 0),
-                        "half_day_count": report.get("half_day_count", 0),
-                        "paid_leave_days": report.get("paid_leave_days", 0),
-                        "weekly_Offs": report.get("weekly_Offs", 0),
-                        "unpaid_leaves": report.get("unpaid_leaves", 0),
-                        "total_payable_days": report.get("total_payable_days", 0),
-                        "total_payable_hours": report.get("total_payable_hours", 0),
-                        "salary_type": report.get("salary_type"),
-                        "final_salary": report.get("final_salary", 0),
-                        "daily_rate": report.get("daily_rate", 0),
-                        "current_payment": report.get("current_payment", 0),
+                        "present_days": Decimal(str(report.get("present_days", 0))),
+                        "absent_days": Decimal(str(report.get("absent_days", 0))),
+                        "half_day_count": Decimal(str(report.get("half_day_count", 0))),
+                        "paid_leave_days": Decimal(str(report.get("paid_leave_days", 0))),
+                        "weekly_Offs": Decimal(str(report.get("weekly_offs", 0))),
+                        "unpaid_leaves": Decimal(str(report.get("unpaid_leaves", 0))),
+                        "total_payable_days": Decimal(str(report.get("total_payable_days", 0))),
+                        "total_payable_hours": Decimal(str(report.get("total_payable_hours", 0))),
                     }
                 )
             
