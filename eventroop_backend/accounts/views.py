@@ -247,7 +247,7 @@ class StaffViewSet(viewsets.ModelViewSet):
     """
     serializer_class = StaffSerializer
     
-    permission_classes = [IsCreator,IsVSREOwnerOrManager]
+    permission_classes = [IsAuthenticated,IsCreator,IsVSREOwnerOrManager]
     filterset_fields = ["is_active", "city"]
     search_fields = ["email", "first_name", "last_name", "mobile_number"]
 

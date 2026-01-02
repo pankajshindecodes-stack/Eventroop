@@ -290,15 +290,12 @@ class AttendanceReportAdmin(admin.ModelAdmin):
         'end_date', 
         'total_payable_days', 
         'total_payable_hours', 
-        'final_salary', 
-        'current_payment',
         'created_at',
         'updated_at',
     )
 
     # Fields to filter in the sidebar
     list_filter = (
-        'salary_type',
         'start_date',
         'end_date',
         'created_at',
@@ -333,16 +330,6 @@ class AttendanceReportAdmin(admin.ModelAdmin):
                 'unpaid_leaves',
                 'total_payable_days',
                 'total_payable_hours',
-            )
-        }),
-        ('Salary Data', {
-            'fields': (
-                'salary_type',
-                'final_salary',
-                'daily_rate',
-                'current_payment',
-                'remaining_payable_days',
-                'remaining_payment',
             )
         }),
         ('Metadata', {

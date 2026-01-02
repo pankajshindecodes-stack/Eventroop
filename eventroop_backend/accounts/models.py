@@ -9,7 +9,7 @@ from datetime import timedelta
 #                         USER MANAGER
 # -------------------------------------------------------------------
 class CustomUserManager(BaseUserManager):
-    """Custom manager for CustomUser model with role-based filters."""
+    """Custom manager for CustomUser model with user_type-based filters."""
 
     def create_user(self, email, mobile_number, password=None, **extra_fields):
         if not email:
@@ -124,7 +124,7 @@ class CustomUserManager(BaseUserManager):
 #                         USER MODEL
 # -------------------------------------------------------------------
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    """Core user model supporting multiple roles and hierarchy."""
+    """Core user model supporting multiple user_types and hierarchy."""
 
     class UserTypes(models.TextChoices):
         MASTER_ADMIN = "MASTER_ADMIN", "Master Admin"

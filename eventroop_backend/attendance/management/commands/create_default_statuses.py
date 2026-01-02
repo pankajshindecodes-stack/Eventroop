@@ -6,22 +6,22 @@ class Command(BaseCommand):
     help = "Create default attendance statuses if not present"
 
     DEFAULT_STATUSES = [
-        ("P", "Present"),
-        ("A", "Absent"),
-        ("HD", "Half Day"),
-        ("PL", "Paid Leave"),
-        ("UL", "Unpaid Leave"),
+        ('ABSENT','Absent'),
+        ('PRESENT','Present'),
+        ('HALF_DAY','Half day'),
+        ('PAID_LEAVE','Paid leave'),
+        ('UNPAID_LEAVE','Unpaid leave'),
     ]
 
     def handle(self, *args, **kwargs):
         created_count = 0
 
         for code, label in self.DEFAULT_STATUSES:
-            obj, created = AttendanceStatus.objects.get_or_create(
+            obj, created = AttendanceStatus.objects.update_or_create(
                 code=code,
                 defaults={"label": label, "is_active": True},
             )
-            if created:
+            if obj or created:
                 created_count += 1
 
         self.stdout.write(

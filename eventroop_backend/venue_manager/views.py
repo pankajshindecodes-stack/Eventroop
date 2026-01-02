@@ -39,7 +39,7 @@ class VenueViewSet(viewsets.ModelViewSet):
     ]
 
     # --------------------------------------------------------
-    # FILTER VENUES BASED ON ROLE
+    # FILTER VENUES BASED ON user_type
     # --------------------------------------------------------
     def get_queryset(self):
         user = self.request.user
@@ -50,7 +50,7 @@ class VenueViewSet(viewsets.ModelViewSet):
         if user.is_manager:
             return Venue.objects.filter(manager=user, is_deleted=False)
 
-        if user.is_staff_role:
+        if user.is_staff_user_type:
             return Venue.objects.filter(staff=user, is_deleted=False)
 
         return Venue.objects.none()
@@ -98,7 +98,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     ]
 
     # --------------------------------------------------------
-    # FILTER SERVICES BASED ON ROLE
+    # FILTER SERVICES BASED ON user_type
     # --------------------------------------------------------
     def get_queryset(self):
         user = self.request.user
@@ -109,7 +109,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
         if user.is_manager:
             return Service.objects.filter(manager=user, is_deleted=False)
 
-        if user.is_staff_role: 
+        if user.is_staff_user_type: 
             return Service.objects.filter(staff=user, is_deleted=False)
 
         return Service.objects.none()

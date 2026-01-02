@@ -203,7 +203,7 @@ class CustomerListSerializer(serializers.ModelSerializer):
             "mobile_number",
         ]
 
-# ---------------------- User Role Profile Serializer ----------------------
+# ---------------------- User user_type Profile Serializer ----------------------
 class OwnerSerializer(BaseUserSerializer):
     """Serializer for VSRE Owners."""
     owned_venues = VenueMiniSerializer(many=True, read_only=True)

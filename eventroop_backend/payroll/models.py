@@ -1,6 +1,8 @@
 from django.db import models
 from accounts.models import CustomUser
 from django.utils import timezone
+from django.db.models import Q, F
+
 
 class SalaryStructure(models.Model):
 
@@ -49,7 +51,7 @@ class SalaryStructure(models.Model):
     )
 
     effective_from = models.DateField()
-
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -99,14 +101,6 @@ class SalaryTransaction(models.Model):
     Payroll / Salary payment transaction
     """
 
-    PAYMENT_TYPE_CHOICES = [
-        ("MONTHLY", "Monthly"),
-        ("FORTNIGHTLY", "Fortnightly"),
-        ("WEEKLY", "Weekly"),
-        ("DAILY", "Daily"),
-        ("HOURLY", "Hourly"),
-    ]
-
     PAYMENT_METHOD_CHOICES = [
         ("BANK_TRANSFER", "Bank Transfer"),
         ("CHECK", "Check"),
@@ -123,56 +117,66 @@ class SalaryTransaction(models.Model):
         ("CANCELLED", "Cancelled"),
     ]
 
-    # Payroll identifiers
     transaction_id = models.CharField(
         max_length=50,
         unique=True,
-        db_index=True,
-        help_text="Unique salary transaction ID"
+        db_index=True
     )
 
-    # Employee receiving salary
     receiver = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
-        related_name="salary_receiver"
+        limit_choices_to={"user_type__in": ["VSRE_MANAGER", "LINE_MANAGER", "VSRE_STAFF"]},
+        related_name="salary_received"
     )
 
-    # Employer / processor
     payer = models.ForeignKey(
         CustomUser,
         on_delete=models.SET_NULL,
         null=True,
-        related_name="salary_payer"
+        blank=True,
+        limit_choices_to={"user_type": "VSRE_OWNER"},
+        related_name="salary_paid"
     )
 
-    amount = models.DecimalField(
+    # Payment amounts
+    total_payable_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+
+    paid_amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
-        help_text="Salary amount"
+        default=0
     )
 
-    payment_type = models.CharField(
-        max_length=20,
-        choices=PAYMENT_TYPE_CHOICES
+    remaining_payment = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0
     )
 
-    # Salary period
+    daily_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0
+    )
+
     payment_period_start = models.DateField()
     payment_period_end = models.DateField()
 
     payment_method = models.CharField(
         max_length=20,
         choices=PAYMENT_METHOD_CHOICES,
-        default="BANK_TRANSFER"
+        default="CASH"
     )
 
     payment_reference = models.CharField(
         max_length=100,
         blank=True,
         null=True,
-        unique=True,
-        help_text="Bank ref / UTR / cheque number"
+        unique=True
     )
 
     status = models.CharField(
@@ -184,37 +188,24 @@ class SalaryTransaction(models.Model):
 
     note = models.TextField(blank=True, null=True)
 
-    attachment = models.FileField(
-        upload_to="salary_receipts/",
-        blank=True,
-        null=True
-    )
-
-    processed_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        help_text="When salary was paid"
-    )
+    processed_at = models.DateTimeField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-payment_period_start"]
-        verbose_name = "Salary Payment"
-        verbose_name_plural = "Salary Payments"
         indexes = [
             models.Index(fields=["receiver", "-processed_at"]),
             models.Index(fields=["status", "created_at"]),
-            models.Index(fields=["transaction_id"]),
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(amount__gt=0),
-                name="salary_amount_positive"
+                check=Q(total_payable_amount__gt=0),
+                name="total_payable_amount_positive"
             ),
             models.CheckConstraint(
-                check=models.Q(payment_period_end__gte=models.F("payment_period_start")),
+                check=Q(payment_period_end__gte=F("payment_period_start")),
                 name="valid_salary_period"
             ),
         ]
@@ -222,32 +213,34 @@ class SalaryTransaction(models.Model):
     def __str__(self):
         return (
             f"{self.receiver.get_full_name()} | "
-            f"{self.amount} | "
-            f"{self.payment_period_start} → {self.payment_period_end}"
+            f"Payable: {self.total_payable_amount} | Paid: {self.paid_amount}"
         )
-
-    # -----------------------
-    # Business logic
-    # -----------------------
 
     def save(self, *args, **kwargs):
         if not self.transaction_id:
             self.transaction_id = self.generate_transaction_id()
+
+        self.remaining_payment = max(
+            self.total_payable_amount - self.paid_amount, 0
+        )
+
         super().save(*args, **kwargs)
 
     @staticmethod
     def generate_transaction_id():
         import uuid
         ts = timezone.now().strftime("%Y%m%d%H%M%S")
-        return f"SAL-{ts}-{uuid.uuid4().hex[:8].upper()}"
+        return f"P-{ts}-{uuid.uuid4().hex[:8].upper()}"
 
+    # Status helpers
     def mark_as_processing(self):
         self.status = "PROCESSING"
         self.save(update_fields=["status", "updated_at"])
 
-    def mark_as_paid(self, payment_reference=None):
+    def mark_as_paid(self, paid_amount=None, payment_reference=None):
         self.status = "SUCCESS"
         self.processed_at = timezone.now()
+        self.paid_amount = paid_amount or self.total_payable_amount
         if payment_reference:
             self.payment_reference = payment_reference
         self.save()
@@ -258,8 +251,5 @@ class SalaryTransaction(models.Model):
             self.note = reason
         self.save()
 
-    def is_pending(self):
-        return self.status == "PENDING"
-
-    def is_successful(self):
-        return self.status == "SUCCESS"
+    def is_fully_paid(self):
+        return self.remaining_payment == 0 and self.status == "SUCCESS"

@@ -18,13 +18,13 @@ class Command(BaseCommand):
             )
             return
 
-        start_date = date.today()
-        end_date = date.today() + timedelta(days=2) 
+        start_date = date(year=2025,month=10,day=1)
+        end_date = date.today() 
         
         # Get staff users as a list of IDs directly
-        users = CustomUser.objects.get_staff_under_owner(owner=38)
+        users = CustomUser.objects.get_staff_under_owner(owner=2)
         user_ids = list(users.values_list('id', flat=True))
-
+        print(user_ids)
         if not user_ids:
             self.stdout.write(self.style.WARNING("No staff found for this owner."))
             return

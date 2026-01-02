@@ -1,12 +1,7 @@
 # serializers.py
 from rest_framework import serializers
-from .models import SalaryStructure, CustomUser
-from django.utils import timezone
-from decimal import Decimal
-
-from rest_framework import serializers
-from decimal import Decimal
-from .models import SalaryStructure, CustomUser
+from .models import SalaryStructure, SalaryTransaction
+from accounts.models import CustomUser
 
 
 class SalaryStructureSerializer(serializers.ModelSerializer):
@@ -47,3 +42,4 @@ class SalaryStructureSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
+    

@@ -211,7 +211,7 @@ class CustomUserAdmin(BaseUserAdmin):
             },
         ),
         (
-            "Role & Permissions",
+            "user_type & Permissions",
             {
                 "fields": (
                     "user_type",
