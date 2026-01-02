@@ -5,7 +5,7 @@ from django.contrib.contenttypes.fields import GenericRelation
 
 from accounts.models import CustomUser
 
-# ----------------------------- Photo for all -----------------------from django.db import models
+# ----------------------------- Photo for all -----------------------
 class Photos(models.Model):
     image = models.ImageField(upload_to="entity_photos/")
     is_primary = models.BooleanField(default=False)
