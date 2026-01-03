@@ -1,10 +1,5 @@
-# Django
-from datetime import datetime
-from django.db.models import Q,Prefetch
-from django.utils import timezone
-
 # Third-party
-from rest_framework import status
+from rest_framework import status,generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,10 +14,9 @@ from .models import Attendance, AttendanceStatus,AttendanceReport
 from .serializers import (
     AttendanceSerializer,
     AttendanceStatusSerializer,
-    # AttendanceReportSerializer,
+    AttendanceReportSerializer,
 )
 from .permissions import IsSuperUserOrOwnerOrReadOnly
-from django.db.models import Q
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 
@@ -151,165 +145,33 @@ class AttendanceView(APIView):
                 )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# class AttendanceReportAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
+class AttendanceReportView(generics.ListAPIView):
+    serializer_class = AttendanceReportSerializer
+    permission_classes = [IsAuthenticated]
 
-#     def get_queryset(self, user):
-#         """Get users based on permission level."""
-#         qs = CustomUser.objects.select_related("hierarchy").filter(is_active=True)
-        
-#         if user.is_superuser:
-#             return qs
-        
-#         if getattr(user, "is_owner", False):
-#             return qs.filter(hierarchy__owner=user).exclude(id=user.id)
-        
-#         return qs.filter(id=user.id)
+    queryset = AttendanceReport.objects.select_related("user")
 
-#     def apply_filters(self, queryset, request):
-#         """Apply search and user_id filters."""
-#         q = Q()
-        
-#         if uid := request.query_params.get("user_id"):
-#             q &= Q(id=uid)
-        
-#         if search := request.query_params.get("search"):
-#             q &= (
-#                 Q(first_name__icontains=search) |
-#                 Q(last_name__icontains=search) |
-#                 Q(email__icontains=search) |
-#                 Q(employee_id__icontains=search)
-#             )
-        
-#         return queryset.filter(q) if q else queryset
+    # 🎯 Exact match filters
+    filterset_fields = [
+        "user_id",
+        "period_type",
+        "start_date",
+        "end_date",
+    ]
 
-#     def parse_date_range(self, request):
-#         """
-#         Parse and validate date range from query params.
-#         Returns (start_date, end_date) or (None, None) if not provided.
-#         Raises ValueError if invalid.
-#         """
-#         start = request.query_params.get("start_date")
-#         end = request.query_params.get("end_date")
-        
-#         if not start or not end:
-#             return None, None
+    # 🔎 Search (LIKE %term%)
+    search_fields = [
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+        "period_type",
+    ]
 
-#         try:
-#             start_date = datetime.strptime(start, "%Y-%m-%d").date()
-#             end_date = datetime.strptime(end, "%Y-%m-%d").date()
-
-#             if end_date < start_date:
-#                 raise ValueError("end_date cannot be before start_date")
-            
-#             return start_date, end_date
-        
-#         except ValueError as e:
-#             raise ValueError(f"Invalid date format or range: {str(e)}")
-
-#     def get_reports_for_user(self, user, start_date=None, end_date=None):
-#         """
-#         Fetch attendance reports for a user.
-#         Uses database cache via signals.
-#         """
-#         queryset = AttendanceReport.objects.filter(user=user).order_by('-start_date')
-        
-#         if start_date and end_date:
-#             queryset = queryset.filter(
-#                 start_date__gte=start_date,
-#                 end_date__lte=end_date
-#             )
-        
-#         return queryset
-
-#     def get(self, request):
-#         """
-#         Get attendance reports for one or multiple users.
-        
-#         Query params:
-#             - user_id: Filter by specific user (optional)
-#             - search: Search by name, email, or employee_id (optional)
-#             - start_date: Filter reports by start date (YYYY-MM-DD, optional)
-#             - end_date: Filter reports by end date (YYYY-MM-DD, optional)
-        
-#         Returns:
-#             Single user: {"status": "success", "user_id": X, "reports": [...]}
-#             Multiple users: {"status": "success", "count": X, "results": [...]}
-#         """
-#         # Parse and validate date range
-#         try:
-#             start_date, end_date = self.parse_date_range(request)
-#         except ValueError as e:
-#             return Response(
-#                 {"status": "error", "message": str(e)},
-#                 status=400
-#             )
-
-#         # Get authorized users
-#         queryset = self.apply_filters(
-#             self.get_queryset(request.user),
-#             request
-#         )
-
-#         user_id = request.query_params.get("user_id")
-
-#         # 🔹 Single user endpoint
-#         if user_id:
-#             try:
-#                 user = queryset.get(id=user_id)
-#             except CustomUser.DoesNotExist:
-#                 return Response(
-#                     {"status": "error", "message": "User not found or access denied"},
-#                     status=404
-#                 )
-
-#             reports = self.get_reports_for_user(user, start_date, end_date)
-#             serializer = AttendanceReportSerializer(reports, many=True)
-
-#             return Response(
-#                 {
-#                     "status": "success",
-#                     "user_id": user.id,
-#                     "user_name": user.get_full_name(),
-#                     "email": user.email,
-#                     "report_count": reports.count(),
-#                     "reports": serializer.data,
-#                 }
-#             )
-
-#         # 🔹 Multiple users endpoint
-#         queryset = queryset.prefetch_related(
-#             Prefetch(
-#                 "attendance_reports",
-#                 queryset=AttendanceReport.objects.order_by('-start_date'),
-#                 to_attr="prefetched_reports",
-#             )
-#         )
-
-#         results = []
-#         for user in queryset:
-#             # Filter reports by date range if provided
-#             reports = user.prefetched_reports
-#             if start_date and end_date:
-#                 reports = [
-#                     r for r in reports
-#                     if r.start_date >= start_date and r.end_date <= end_date
-#                 ]
-
-#             serializer = AttendanceReportSerializer(reports, many=True)
-#             results.append({
-#                 "user_id": user.id,
-#                 "user_name": user.get_full_name(),
-#                 "employee_id": user.employee_id,
-#                 "email": user.email,
-#                 "report_count": len(reports),
-#                 "reports": serializer.data,
-#             })
-
-#         return Response(
-#             {
-#                 "status": "success",
-#                 "count": len(results),
-#                 "results": results,
-#             }
-#         )
+    # ↕️ Ordering
+    ordering_fields = [
+        "start_date",
+        "end_date",
+        "created_at",
+        "updated_at",
+    ]
+    ordering = ["-start_date"]

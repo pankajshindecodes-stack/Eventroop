@@ -22,7 +22,8 @@ class Command(BaseCommand):
         end_date = date.today() 
         
         # Get staff users as a list of IDs directly
-        users = CustomUser.objects.get_staff_under_owner(owner=2)
+        users_query= CustomUser.objects.all()
+        users = users_query.filter(hierarchy__owner=2)
         user_ids = list(users.values_list('id', flat=True))
         print(user_ids)
         if not user_ids:

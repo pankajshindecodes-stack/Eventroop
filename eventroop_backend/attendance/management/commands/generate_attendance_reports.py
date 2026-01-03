@@ -11,19 +11,8 @@ from decimal import Decimal
 class Command(BaseCommand):
     help = 'Generate attendance reports for all users'
 
-    def add_arguments(self, parser):
-        parser.add_argument('--user-id', type=int, help='Generate report for specific user')
-        parser.add_argument('--date', type=str, help='Generate reports for specific date (YYYY-MM-DD)')
-
     def handle(self, *args, **options):
-        user_id = options.get('user_id')
-        date_str = options.get('date')
-        
-        if user_id:
-            users = CustomUser.objects.get_all_managers_under_owner(user_id)
-            
-        else:
-            users = CustomUser.objects.all()
+        users = CustomUser.objects.filter(user_type__in=("VSRE_MANAGER","LINE_MANAGER","VSRE_STAFF"))
         
         for user in users:
             payroll = AttendanceCalculator(user)

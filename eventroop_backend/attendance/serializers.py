@@ -41,75 +41,43 @@ class AttendanceSerializer(serializers.ModelSerializer):
         
         return data
 
-
-# class AttendanceReportSerializer(serializers.ModelSerializer):
-#     """Serializer for individual attendance reports."""
-    
-#     class Meta:
-#         model = AttendanceReport
-#         fields = [
-#             'start_date',
-#             'end_date',
-#             'period_type',
-#             'present_days',
-#             'absent_days',
-#             'half_day_count',
-#             'paid_leave_days',
-#             'weekly_Offs',
-#             'unpaid_leaves',
-#             'total_payable_days',
-#             'total_payable_hours',
-#         ]
-#         read_only_fields = fields
+from decimal import Decimal
+from rest_framework import serializers
+from .models import AttendanceReport
 
 
-# class UserAttendanceReportSerializer(serializers.Serializer):
-#     """Serializer for user with their attendance reports."""
-    
-#     user_id = serializers.IntegerField()
-#     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
-#     employee_id = serializers.CharField(source='user.employee_id', read_only=True)
-#     email = serializers.EmailField(source='user.email', read_only=True)
-#     reports = AttendanceReportSerializer(many=True, read_only=True)
+class AttendanceReportSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(
+        source="user.get_full_name",
+        read_only=True
+    )
+    employee_id = serializers.CharField(
+        source="user.employee_id",
+        read_only=True
+    )
 
+    class Meta:
+        model = AttendanceReport
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "employee_id",
 
-# class AttendanceReportListSerializer(serializers.Serializer):
-#     """Serializer for list response with single user."""
-    
-#     status = serializers.CharField()
-#     user_id = serializers.IntegerField()
-#     user_name = serializers.CharField(required=False)
-#     email = serializers.EmailField(required=False)
-#     report_count = serializers.IntegerField(required=False)
-#     reports = AttendanceReportSerializer(many=True, read_only=True)
+            "start_date",
+            "end_date",
+            "period_type",
 
+            "present_days",
+            "absent_days",
+            "half_day_count",
+            "paid_leave_days",
+            "weekly_Offs",
+            "unpaid_leaves",
 
-# class AttendanceReportBulkListSerializer(serializers.Serializer):
-#     """Serializer for bulk list response with multiple users."""
-    
-#     status = serializers.CharField()
-#     count = serializers.IntegerField()
-#     results = UserAttendanceReportSerializer(many=True, read_only=True)
+            "total_payable_days",
+            "total_payable_hours",
 
+        ]
 
-#     """Serializer for filtering reports."""
-#     user_id = serializers.IntegerField(required=False, allow_null=True)
-#     search = serializers.CharField(required=False, allow_blank=True)
-#     start_date = serializers.DateField(required=False, allow_null=True)
-#     end_date = serializers.DateField(required=False, allow_null=True)
-#     period_type = serializers.ChoiceField(
-#         choices=['HOURLY', 'DAILY', 'WEEKLY', 'FORTNIGHTLY', 'MONTHLY'],
-#         default='MONTHLY'
-#     )
-#     include_salary = serializers.BooleanField(default=False)
-    
-#     def validate(self, data):
-#         start_date = data.get('start_date')
-#         end_date = data.get('end_date')
-        
-#         if start_date and end_date and end_date < start_date:
-#             raise serializers.ValidationError({
-#                 'end_date': "end_date cannot be before start_date"
-#             })
-        
-#         return data
+        read_only_fields = ["created_at", "updated_at"]

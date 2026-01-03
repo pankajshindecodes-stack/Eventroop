@@ -171,32 +171,3 @@ class AttendanceReport(models.Model):
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.start_date} to {self.end_date}"
     
-    @property
-    def total_days_worked(self):
-        """Calculate total days worked (present + half-day)."""
-        return self.present_days + (self.half_day_count * Decimal('0.5'))
-    
-    @property
-    def total_days_absent(self):
-        """Calculate total days absent (absent + unpaid leave)."""
-        return self.absent_days + self.unpaid_leaves
-    
-    @property
-    def days_on_leave(self):
-        """Calculate total leave days (paid + unpaid)."""
-        return self.paid_leave_days + self.unpaid_leaves
-    
-    @property
-    def attendance_percentage(self):
-        """Calculate attendance percentage."""
-        total_expected_days = (
-            self.present_days + self.absent_days + self.paid_leave_days +
-            self.half_day_count + self.weekly_Offs + self.unpaid_leaves
-        )
-        if total_expected_days == 0:
-            return Decimal('0.00')
-        return (self.total_days_worked / total_expected_days * 100).quantize(
-            Decimal('0.01')
-        )
-    
-    

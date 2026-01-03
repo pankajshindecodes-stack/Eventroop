@@ -66,10 +66,10 @@ class AttendanceCalculator:
         return {
             "present": qs.filter(code__icontains="PRESENT").first(),
             "absent": qs.filter(code__icontains="ABSENT").first(),
-            "paid_leave": qs.filter(code__icontains="PAID-LEAVE").first(),
-            "half_day": qs.filter(code__icontains="HALF-DAY").first(),
-            "weekly_off": qs.filter(code__icontains="WEEKLY-OFF").first(),
-            "unpaid_leave": qs.filter(code__icontains="UNPAID-LEAVE").first(),
+            "paid_leave": qs.filter(code__icontains="PAID_LEAVE").first(),
+            "half_day": qs.filter(code__icontains="HALF_DAY").first(),
+            "weekly_off": qs.filter(code__icontains="WEEKLY_OFF").first(),
+            "unpaid_leave": qs.filter(code__icontains="UNPAID_LEAVE").first(),
         }
 
     def _calculate_attendance(self, start_date, end_date):
@@ -123,6 +123,7 @@ class AttendanceCalculator:
         
         attendance = self._calculate_attendance(period_start, period_end)
 
+        print(attendance)
         return {
             "start_date": period_start,
             "end_date": period_end,

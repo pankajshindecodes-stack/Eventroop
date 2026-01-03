@@ -4,6 +4,7 @@ from django.core.cache import cache
 from decimal import Decimal
 
 from .models import Attendance, AttendanceReport
+from payroll.models import SalaryStructure
 from .utils import AttendanceCalculator
 
 
@@ -15,7 +16,13 @@ def update_attendance_report_on_save(sender, instance, created, **kwargs):
     """
     user = instance.user
     attendance_date = instance.date
-    
+    salary_structure = (
+            SalaryStructure.objects
+            .filter(user=user, effective_from__lte=attendance_date)
+            .order_by("-effective_from")
+            .first()
+        )
+    period_type = salary_structure.salary_type if salary_structure else None
     # Initialize the calculator with the attendance date
     calculator = AttendanceCalculator(user, base_date=attendance_date)
     
@@ -23,7 +30,7 @@ def update_attendance_report_on_save(sender, instance, created, **kwargs):
     # Default to MONTHLY if no specific period type is needed
     report = calculator.get_attendance_report(
         base_date=attendance_date,
-        period_type="MONTHLY"
+        period_type=period_type
     )
     
     if report:
@@ -59,14 +66,21 @@ def update_attendance_report_on_delete(sender, instance, **kwargs):
     user = instance.user
     attendance_date = instance.date
     
+    salary_structure = (
+            SalaryStructure.objects
+            .filter(user=user, effective_from__lte=attendance_date)
+            .order_by("-effective_from")
+            .first()
+        )
+    period_type = salary_structure.salary_type if salary_structure else None
+    
     # Initialize the calculator with the attendance date
     calculator = AttendanceCalculator(user, base_date=attendance_date)
-    
     # Get report for the period containing this attendance date
     # Default to MONTHLY if no specific period type is needed
     report = calculator.get_attendance_report(
         base_date=attendance_date,
-        period_type="MONTHLY"
+        period_type=period_type
     )
     
     if report:
