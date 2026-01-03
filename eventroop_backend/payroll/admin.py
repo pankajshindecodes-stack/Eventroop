@@ -3,6 +3,61 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Q
 from .models import SalaryStructure, SalaryTransaction
+
+
+
+# ------------------------------------------
+# Custom Filters
+# ------------------------------------------
+class MonthFilter(admin.SimpleListFilter):
+    title = "Month"
+    parameter_name = "month"
+
+    def lookups(self, request, model_admin):
+        return [(i, i) for i in range(1, 13)]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(effective_from__month=self.value())
+        return queryset
+
+
+class YearFilter(admin.SimpleListFilter):
+    title = "Year"
+    parameter_name = "year"
+
+    def lookups(self, request, model_admin):
+        years = SalaryStructure.objects.values_list(
+            "effective_from__year", flat=True
+        ).distinct()
+        return [(y, y) for y in years if y]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(effective_from__year=self.value())
+        return queryset
+
+
+class UserFilter(admin.SimpleListFilter):
+    title = "User"
+    parameter_name = "user"
+
+    def lookups(self, request, model_admin):
+        users = (
+            SalaryStructure.objects.values_list("user__id", "user__first_name", "user__last_name")
+            .distinct()
+            .order_by("user__first_name", "user__last_name")
+        )
+        return [
+            (user_id, f"{first_name} {last_name}".strip())
+            for user_id, first_name, last_name in users
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(user__id=self.value())
+        return queryset
+
 @admin.register(SalaryStructure)
 class SalaryStructureAdmin(admin.ModelAdmin):
 
@@ -17,6 +72,9 @@ class SalaryStructureAdmin(admin.ModelAdmin):
     )
 
     list_filter = (
+        MonthFilter,
+        YearFilter,
+        UserFilter,
         "salary_type",
         "change_type",
         "effective_from",
@@ -62,14 +120,13 @@ class SalaryStructureAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         return qs.select_related("user")
     from django.contrib import admin
-from .models import SalaryTransaction
 
 
 @admin.register(SalaryTransaction)
 class SalaryTransactionAdmin(admin.ModelAdmin):
     list_display = (
         "transaction_id",
-        "receiver",
+        "user",
         "total_payable_amount",
         "paid_amount",
         "remaining_payment",
@@ -88,9 +145,9 @@ class SalaryTransactionAdmin(admin.ModelAdmin):
 
     search_fields = (
         "transaction_id",
-        "receiver__email",
-        "receiver__first_name",
-        "receiver__last_name",
+        "user__email",
+        "user__first_name",
+        "user__last_name",
         "payment_reference",
     )
 
@@ -115,7 +172,7 @@ class SalaryTransactionAdmin(admin.ModelAdmin):
             )
         }),
         ("Users", {
-            "fields": ("receiver", "payer")
+            "fields": ("user",)
         }),
         ("Payment Details", {
             "fields": (

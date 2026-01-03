@@ -4,9 +4,9 @@ from django.core.cache import cache
 from decimal import Decimal
 
 from .models import Attendance, AttendanceReport
-from payroll.models import SalaryStructure
+from payroll.models import SalaryStructure,SalaryTransaction
 from .utils import AttendanceCalculator
-
+from payroll.utils import SalaryCalculator
 
 @receiver(post_save, sender=Attendance)
 def update_attendance_report_on_save(sender, instance, created, **kwargs):
@@ -105,3 +105,43 @@ def update_attendance_report_on_delete(sender, instance, **kwargs):
     # Invalidate cache for this user's attendance reports
     cache_key = f"attendance_reports_{user.id}"
     cache.delete(cache_key)
+
+
+@receiver(post_save, sender=AttendanceReport)
+def create_or_update_salary_transaction(sender, instance, **kwargs):
+    """
+    Auto-create or update SalaryTransaction whenever
+    AttendanceReport is created or updated.
+    """
+
+    user = instance.user
+    period_start = instance.start_date
+    period_end = instance.end_date
+    period_type = instance.period_type
+
+    # Initialize salary calculator
+    calculator = SalaryCalculator(user=user, base_date=period_end)
+
+    # Calculate payroll
+    payroll_data = calculator.calculate_payroll(
+        base_date=period_end,
+        period_type=period_type
+    )
+
+    total_payable_amount = Decimal(str(payroll_data.get("current_payment", 0)))
+    daily_rate = Decimal(str(payroll_data.get("daily_rate", 0)))
+
+    if total_payable_amount <= 0:
+        return  # Do not create zero or negative salary transactions
+
+    # Create or update SalaryTransaction
+    SalaryTransaction.objects.update_or_create(
+        user=user,
+        payment_period_start=period_start,
+        payment_period_end=period_end,
+        defaults={
+            "total_payable_amount": total_payable_amount,
+            "daily_rate": daily_rate,
+            "remaining_payment": total_payable_amount,
+        }
+    )

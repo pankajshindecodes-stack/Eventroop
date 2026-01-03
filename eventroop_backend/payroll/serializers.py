@@ -43,3 +43,47 @@ class SalaryStructureSerializer(serializers.ModelSerializer):
 
         return attrs
     
+
+
+class SalaryTransactionSerializer(serializers.ModelSerializer):
+    receiver_name = serializers.CharField(
+        source="receiver.get_full_name",
+        read_only=True
+    )
+
+    class Meta:
+        model = SalaryTransaction
+        fields = [
+            "id",
+            "transaction_id",
+            "user",
+            "user_name",
+            "total_payable_amount",
+            "paid_amount",
+            "remaining_payment",
+            "daily_rate",
+            "payment_period_start",
+            "payment_period_end",
+            "payment_method",
+            "payment_reference",
+            "status",
+            "note",
+            "processed_at",
+            "created_at",
+        ]
+        read_only_fields = [
+            "transaction_id",
+            "remaining_payment",
+            "processed_at",
+            "created_at",
+            "status",
+        ]
+
+    def validate(self, attrs):
+        start = attrs.get("payment_period_start")
+        end = attrs.get("payment_period_end")
+
+        if start and end and end < start:
+            raise serializers.ValidationError("End date must be after start date")
+
+        return attrs

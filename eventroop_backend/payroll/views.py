@@ -1,14 +1,9 @@
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.utils import timezone
-from decimal import Decimal
 from .models import SalaryStructure, SalaryTransaction
-from accounts.models import CustomUser
-from attendance.models import AttendanceReport
-from .serializers import SalaryStructureSerializer
+from .serializers import SalaryStructureSerializer,SalaryTransactionSerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from django.db.models import Q, F, Sum
  
 
 class SalaryStructureViewSet(viewsets.ModelViewSet):
@@ -51,3 +46,67 @@ class SalaryStructureViewSet(viewsets.ModelViewSet):
         else:
             queryset = SalaryStructure.objects.filter(user=user)
         return queryset.select_related("user").order_by("-effective_from")
+
+
+class SalaryTransactionViewSet(viewsets.ModelViewSet):
+    """
+    Payroll SalaryTransaction API
+    """
+    serializer_class = SalaryTransactionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Owner can see all, others only their salary
+        if user.is_superuser:
+            return SalaryTransaction.objects.all()
+
+        if user.is_owner():
+            return SalaryTransaction.objects.filter(user__hierarchy__owner=user)
+        if user.is_manager() or user.is_vsre_staff():
+            return SalaryTransaction.objects.filter(user=user)
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+
+        # Prevent update after payment success
+        if instance.status == "SUCCESS":
+            raise ValueError("Paid salary cannot be modified")
+
+        serializer.save()
+
+    # -------------------------------
+    # Custom Actions
+    # -------------------------------
+
+    @action(detail=True, methods=["post"])
+    def mark_processing(self, request, pk=None):
+        txn = self.get_object()
+        txn.mark_as_processing()
+        return Response({"status": "PROCESSING"})
+
+    @action(detail=True, methods=["post"])
+    def mark_paid(self, request, pk=None):
+        txn = self.get_object()
+
+        paid_amount = request.data.get("paid_amount")
+        payment_reference = request.data.get("payment_reference")
+
+        txn.mark_as_paid(
+            paid_amount=paid_amount,
+            payment_reference=payment_reference
+        )
+
+        return Response(
+            SalaryTransactionSerializer(txn).data,
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=True, methods=["post"])
+    def mark_failed(self, request, pk=None):
+        txn = self.get_object()
+        reason = request.data.get("reason")
+
+        txn.mark_as_failed(reason=reason)
+        return Response({"status": "FAILED"})

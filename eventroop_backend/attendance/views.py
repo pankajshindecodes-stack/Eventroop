@@ -61,7 +61,7 @@ class AttendanceView(APIView):
             queryset = Attendance.objects.all()
         # Owner → see attendance of their staff + managers
         elif user.is_owner:
-            queryset = Attendance.objects.filter(user__hierarchy__owner=user)
+            queryset = Attendance.objects.filter(user__hierarchy__owner=user).exclude
         # Staff or Manager → see only their own attendance
         else:
             queryset = Attendance.objects.filter(user=user)

@@ -1,8 +1,10 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db import transaction
-from .models import SalaryStructure
-
+from .models import SalaryStructure,SalaryTransaction
+from .utils import SalaryCalculator
+from attendance.models import AttendanceReport
+from decimal import Decimal
 
 @receiver(post_save, sender=SalaryStructure)
 def update_salary_on_change(sender, instance, created, **kwargs):
@@ -93,3 +95,55 @@ def update_salary_on_delete(sender, instance, **kwargs):
             SalaryStructure.objects.filter(pk=record.pk).update(
                 final_salary=record.final_salary
             )
+
+
+@receiver(post_save, sender=SalaryStructure)
+def update_salary_transactions_on_salary_change(sender, instance, **kwargs):
+    """
+    Recalculate SalaryTransaction when SalaryStructure changes.
+    """
+
+    user = instance.user
+    effective_from = instance.effective_from
+
+    # Find attendance reports affected by this salary change
+    affected_reports = AttendanceReport.objects.filter(
+        user=user,
+        end_date__gte=effective_from
+    )
+
+    calculator = SalaryCalculator(user=user)
+
+    for report in affected_reports:
+        # Skip already paid salaries (VERY IMPORTANT)
+        txn = SalaryTransaction.objects.filter(
+            user=user,
+            payment_period_start=report.start_date,
+            payment_period_end=report.end_date,
+            status="SUCCESS"
+        ).first()
+
+        if txn:
+            continue  # Never touch paid payrolls
+
+        payroll = calculator.calculate_payroll(
+            base_date=report.end_date,
+            period_type=report.period_type
+        )
+
+        total_payable = Decimal(str(payroll["current_payment"]))
+        daily_rate = Decimal(str(payroll["daily_rate"]))
+
+        if total_payable <= 0:
+            continue
+
+        SalaryTransaction.objects.update_or_create(
+            user=user,
+            payment_period_start=report.start_date,
+            payment_period_end=report.end_date,
+            defaults={
+                "total_payable_amount": total_payable,
+                "daily_rate": daily_rate,
+                "remaining_payment": total_payable,
+            }
+        )

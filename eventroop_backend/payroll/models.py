@@ -123,20 +123,11 @@ class SalaryTransaction(models.Model):
         db_index=True
     )
 
-    receiver = models.ForeignKey(
+    user = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
         limit_choices_to={"user_type__in": ["VSRE_MANAGER", "LINE_MANAGER", "VSRE_STAFF"]},
-        related_name="salary_received"
-    )
-
-    payer = models.ForeignKey(
-        CustomUser,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        limit_choices_to={"user_type": "VSRE_OWNER"},
-        related_name="salary_paid"
+        related_name="salary_receiver"
     )
 
     # Payment amounts
@@ -196,7 +187,7 @@ class SalaryTransaction(models.Model):
     class Meta:
         ordering = ["-payment_period_start"]
         indexes = [
-            models.Index(fields=["receiver", "-processed_at"]),
+            models.Index(fields=["user", "-processed_at"]),
             models.Index(fields=["status", "created_at"]),
         ]
         constraints = [
@@ -212,7 +203,7 @@ class SalaryTransaction(models.Model):
 
     def __str__(self):
         return (
-            f"{self.receiver.get_full_name()} | "
+            f"{self.user.get_full_name()} | "
             f"Payable: {self.total_payable_amount} | Paid: {self.paid_amount}"
         )
 

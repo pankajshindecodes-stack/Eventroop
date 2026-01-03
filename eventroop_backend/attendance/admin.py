@@ -290,8 +290,6 @@ class AttendanceReportAdmin(admin.ModelAdmin):
         'end_date', 
         'total_payable_days', 
         'total_payable_hours', 
-        'created_at',
-        'updated_at',
     )
 
     # Fields to filter in the sidebar
