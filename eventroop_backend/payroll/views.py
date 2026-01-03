@@ -5,7 +5,6 @@ from .serializers import SalaryStructureSerializer,SalaryTransactionSerializer
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
  
-
 class SalaryStructureViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing salary structures
@@ -54,7 +53,10 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
     """
     serializer_class = SalaryTransactionSerializer
     permission_classes = [IsAuthenticated]
-
+    filterset_fields = ['status', 'user_id']
+    search_fields = ['user__first_name', 'user__last_name', 'user__email', 'payment_reference']
+    ordering_fields = ['created_at', 'status', 'amount', 'user__first_name']
+    ordering = ['-created_at']
     def get_queryset(self):
         user = self.request.user
 
