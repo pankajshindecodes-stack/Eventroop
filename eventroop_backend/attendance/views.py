@@ -1,24 +1,16 @@
-# Third-party
 from rest_framework import status,generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
-# Local apps
-from accounts.models import CustomUser
-from payroll.models import SalaryStructure
-
-# Attendance app
 from .models import Attendance, AttendanceStatus,AttendanceReport
+from .permissions import IsSuperUserOrOwnerOrReadOnly
 from .serializers import (
     AttendanceSerializer,
     AttendanceStatusSerializer,
     AttendanceReportSerializer,
 )
-from .permissions import IsSuperUserOrOwnerOrReadOnly
-from rest_framework.viewsets import ModelViewSet
-from rest_framework.permissions import IsAuthenticated
 
 class AttendanceStatusViewSet(ModelViewSet):
     serializer_class = AttendanceStatusSerializer
@@ -61,7 +53,7 @@ class AttendanceView(APIView):
             queryset = Attendance.objects.all()
         # Owner → see attendance of their staff + managers
         elif user.is_owner:
-            queryset = Attendance.objects.filter(user__hierarchy__owner=user).exclude
+            queryset = Attendance.objects.filter(user__hierarchy__owner=user)
         # Staff or Manager → see only their own attendance
         else:
             queryset = Attendance.objects.filter(user=user)
