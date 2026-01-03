@@ -208,7 +208,7 @@ class SalaryTransaction(models.Model):
         )
 
     def save(self, *args, **kwargs):
-        if not self.transaction_id:
+        if self.transaction_id:
             self.transaction_id = self.generate_transaction_id()
 
         self.remaining_payment = max(
@@ -220,8 +220,7 @@ class SalaryTransaction(models.Model):
     @staticmethod
     def generate_transaction_id():
         import uuid
-        ts = timezone.now().strftime("%Y%m%d%H%M%S")
-        return f"P-{ts}-{uuid.uuid4().hex[:8].upper()}"
+        return f"SAL{uuid.uuid4().hex[:12].upper()}"
 
     # Status helpers
     def mark_as_processing(self):

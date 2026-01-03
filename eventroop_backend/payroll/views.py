@@ -62,9 +62,9 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return SalaryTransaction.objects.all()
 
-        if user.is_owner():
+        if user.is_owner:
             return SalaryTransaction.objects.filter(user__hierarchy__owner=user)
-        if user.is_manager() or user.is_vsre_staff():
+        if user.is_manager or user.is_vsre_staff:
             return SalaryTransaction.objects.filter(user=user)
 
     def perform_update(self, serializer):

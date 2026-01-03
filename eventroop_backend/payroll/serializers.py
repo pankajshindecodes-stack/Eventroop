@@ -46,8 +46,8 @@ class SalaryStructureSerializer(serializers.ModelSerializer):
 
 
 class SalaryTransactionSerializer(serializers.ModelSerializer):
-    receiver_name = serializers.CharField(
-        source="receiver.get_full_name",
+    user_name = serializers.CharField(
+        source="user.get_full_name",
         read_only=True
     )
 
@@ -69,13 +69,11 @@ class SalaryTransactionSerializer(serializers.ModelSerializer):
             "status",
             "note",
             "processed_at",
-            "created_at",
         ]
         read_only_fields = [
             "transaction_id",
             "remaining_payment",
             "processed_at",
-            "created_at",
             "status",
         ]
 
