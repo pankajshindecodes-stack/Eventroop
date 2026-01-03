@@ -25,7 +25,6 @@ class Command(BaseCommand):
         users_query= CustomUser.objects.all()
         users = users_query.filter(hierarchy__owner=2)
         user_ids = list(users.values_list('id', flat=True))
-        print(user_ids)
         if not user_ids:
             self.stdout.write(self.style.WARNING("No staff found for this owner."))
             return

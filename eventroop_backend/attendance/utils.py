@@ -123,7 +123,6 @@ class AttendanceCalculator:
         
         attendance = self._calculate_attendance(period_start, period_end)
 
-        print(attendance)
         return {
             "start_date": period_start,
             "end_date": period_end,
