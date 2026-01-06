@@ -1,6 +1,6 @@
 # serializers.py
 from rest_framework import serializers
-from .models import SalaryStructure, SalaryTransaction
+from .models import SalaryStructure, SalaryReport
 from accounts.models import CustomUser
 
 
@@ -43,45 +43,41 @@ class SalaryStructureSerializer(serializers.ModelSerializer):
 
         return attrs
     
-
-
-class SalaryTransactionSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(
-        source="user.get_full_name",
-        read_only=True
-    )
+class SalaryReportSerializer(serializers.ModelSerializer):
+    final_salary = serializers.SerializerMethodField()
+    advance_amount = serializers.SerializerMethodField()
 
     class Meta:
-        model = SalaryTransaction
+        model = SalaryReport
         fields = [
             "id",
-            "transaction_id",
             "user",
-            "user_name",
+            "start_date",
+            "end_date",
+            "final_salary",
+            "advance_amount",
             "total_payable_amount",
             "paid_amount",
             "remaining_payment",
-            "daily_rate",
-            "payment_period_start",
-            "payment_period_end",
-            "payment_method",
-            "payment_reference",
-            "status",
-            "note",
-            "processed_at",
         ]
         read_only_fields = [
-            "transaction_id",
+            "id",
             "remaining_payment",
-            "processed_at",
-            "status",
+            "final_salary",
+            "advance_amount",
         ]
 
     def validate(self, attrs):
-        start = attrs.get("payment_period_start")
-        end = attrs.get("payment_period_end")
+        start = attrs.get("start_date")
+        end = attrs.get("end_date")
 
         if start and end and end < start:
-            raise serializers.ValidationError("End date must be after start date")
+            raise serializers.ValidationError(
+                {"end_date": "End date must be after start date"}
+            )
 
         return attrs
+    def get_advance_amount(self, obj):
+        return obj.advance_amount
+    def get_final_salary(self, obj):
+        return obj.final_salary

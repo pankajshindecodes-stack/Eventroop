@@ -3,7 +3,7 @@ from django.dispatch import receiver
 from django.core.cache import cache
 from decimal import Decimal
 from .models import Attendance, AttendanceReport
-from payroll.models import SalaryStructure, SalaryTransaction
+from payroll.models import SalaryStructure, SalaryReport
 from .utils import AttendanceCalculator
 from payroll.utils import SalaryCalculator
 
@@ -16,7 +16,7 @@ def update_attendance_report_on_save(sender, instance, created, **kwargs):
     try:
         user = instance.user
         attendance_date = instance.date
-        salary_structure = SalaryStructure.objects.filter(user=user,).order_by("-effective_from").first()
+        salary_structure = SalaryStructure.objects.filter(user=user,change_type__in=["BASE_SALARY","INCREMENT"]).order_by("-effective_from").first()
         period_type = salary_structure.salary_type if salary_structure else "MONTHLY"
         
         calculator = AttendanceCalculator(user, base_date=attendance_date)
@@ -62,7 +62,11 @@ def update_attendance_report_on_delete(sender, instance, **kwargs):
         
         salary_structure = (
                 SalaryStructure.objects
-                .filter(user=user, effective_from__lte=attendance_date)
+                .filter(
+                    user=user,
+                    effective_from__lte=attendance_date,
+                    change_type__in=["BASE_SALARY","INCREMENT"]
+                )
                 .order_by("-effective_from")
                 .first()
             )
@@ -100,9 +104,9 @@ def update_attendance_report_on_delete(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender=AttendanceReport)
-def create_or_update_salary_transaction(sender, instance, created, **kwargs):
+def create_or_update_salary_report_on_attendance(sender, instance, created, **kwargs):
     """
-    Auto-create or update SalaryTransaction whenever
+    Auto-create or update SalaryReport whenever
     AttendanceReport is created or updated.
     """
     try:
@@ -124,14 +128,24 @@ def create_or_update_salary_transaction(sender, instance, created, **kwargs):
         if total_payable_amount <= 0:
             return
 
-        SalaryTransaction.objects.update_or_create(
+        # Check if already paid
+        existing_report = SalaryReport.objects.filter(
             user=user,
-            payment_period_start=period_start,
-            payment_period_end=period_end,
+            start_date=period_start,
+            end_date=period_end
+        ).first()
+
+        if existing_report and existing_report.paid_amount > 0:
+            return
+
+        SalaryReport.objects.update_or_create(
+            user=user,
+            start_date=period_start,
+            end_date=period_end,
             defaults={
                 "total_payable_amount": total_payable_amount,
                 "daily_rate": daily_rate,
-                "remaining_payment": total_payable_amount,
+                # remaining_payment is auto-calculated in model's save()
             }
         )
     except Exception as e:

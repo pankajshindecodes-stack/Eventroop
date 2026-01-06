@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Q
-from .models import SalaryStructure, SalaryTransaction
+from .models import SalaryStructure, SalaryReport
 
 
 
@@ -121,78 +121,85 @@ class SalaryStructureAdmin(admin.ModelAdmin):
         return qs.select_related("user")
     from django.contrib import admin
 
+@admin.register(SalaryReport)
+class SalaryReportAdmin(admin.ModelAdmin):
+    """
+    Admin configuration for SalaryReport
+    Read-only financial audit record
+    """
 
-@admin.register(SalaryTransaction)
-class SalaryTransactionAdmin(admin.ModelAdmin):
+    # -------------------- List View --------------------
     list_display = (
-        "transaction_id",
         "user",
+        "start_date",
+        "end_date",
         "total_payable_amount",
         "paid_amount",
         "remaining_payment",
-        "status",
-        "payment_method",
-        "payment_period_start",
-        "payment_period_end",
+        "display_advance_amount",
         "created_at",
     )
 
     list_filter = (
-        "status",
-        "payment_method",
-        "payment_period_start",
+        "start_date",
+        "end_date",
+        "created_at",
     )
 
     search_fields = (
-        "transaction_id",
         "user__email",
         "user__first_name",
         "user__last_name",
-        "payment_reference",
     )
 
+    ordering = ("-start_date",)
+
+    # -------------------- Read-only Fields --------------------
     readonly_fields = (
-        "transaction_id",
         "remaining_payment",
         "created_at",
         "updated_at",
-        "processed_at",
+        "final_salary",
+        "display_advance_amount",
     )
 
-    ordering = ("-created_at",)
-
+    # -------------------- Fieldsets --------------------
     fieldsets = (
-        ("Transaction Info", {
-            "fields": (
-                "transaction_id",
-                "status",
-                "payment_method",
-                "payment_reference",
-                "note",
-            )
-        }),
-        ("Users", {
-            "fields": ("user",)
-        }),
-        ("Payment Details", {
-            "fields": (
-                "total_payable_amount",
-                "paid_amount",
-                "remaining_payment",
-                "daily_rate",
-            )
+        ("Employee", {
+            "fields": ("user",),
         }),
         ("Salary Period", {
             "fields": (
-                "payment_period_start",
-                "payment_period_end",
-            )
+                "start_date",
+                "end_date",
+            ),
         }),
-        ("Timestamps", {
+        ("Salary Calculation", {
             "fields": (
-                "processed_at",
+                "daily_rate",
+                "total_payable_amount",
+                "paid_amount",
+                "remaining_payment",
+                "final_salary",
+                "display_advance_amount",
+            ),
+        }),
+        ("Audit", {
+            "fields": (
                 "created_at",
                 "updated_at",
-            )
+            ),
         }),
     )
+
+    # -------------------- Computed Display --------------------
+    @admin.display(description="Advance Amount")
+    def display_advance_amount(self, obj):
+        return obj.advance_amount
+
+    # -------------------- Admin Protections --------------------
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_add_permission(self, request):
+        return False

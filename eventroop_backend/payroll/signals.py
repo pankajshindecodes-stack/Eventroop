@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db import transaction
-from .models import SalaryStructure,SalaryTransaction
+from .models import SalaryStructure,SalaryReport
 from .utils import SalaryCalculator
 from attendance.models import AttendanceReport
 from decimal import Decimal
@@ -19,7 +19,10 @@ def update_salary_on_change(sender, instance, created, **kwargs):
     # Get all salary records after this entry's effective date
     subsequent_records = (
         SalaryStructure.objects
-        .filter(user=instance.user, effective_from__gt=instance.effective_from)
+        .filter(
+            user=instance.user,
+            effective_from__gt=instance.effective_from
+        )
         .order_by("effective_from")
     )
 
@@ -31,7 +34,7 @@ def update_salary_on_change(sender, instance, created, **kwargs):
                 SalaryStructure.objects
                 .filter(
                     user=record.user,
-                    effective_from__lt=record.effective_from
+                    effective_from__lt=record.effective_from,
                 )
                 .exclude(pk=record.pk)
                 .order_by("-effective_from")
@@ -75,7 +78,7 @@ def update_salary_on_delete(sender, instance, **kwargs):
                 SalaryStructure.objects
                 .filter(
                     user=record.user,
-                    effective_from__lt=record.effective_from
+                    effective_from__lt=record.effective_from,
                 )
                 .order_by("-effective_from")
                 .first()
@@ -98,11 +101,11 @@ def update_salary_on_delete(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender=SalaryStructure)
-def update_salary_transactions_on_salary_change(sender, instance, **kwargs):
+def update_salary_reports_on_salary_change(sender, instance, **kwargs):
     """
-    Recalculate SalaryTransaction when SalaryStructure changes.
+    Recalculate SalaryReport when SalaryStructure changes.
+    Updates only unpaid salary reports for affected periods.
     """
-
     user = instance.user
     effective_from = instance.effective_from
 
@@ -115,16 +118,16 @@ def update_salary_transactions_on_salary_change(sender, instance, **kwargs):
     calculator = SalaryCalculator(user=user)
 
     for report in affected_reports:
-        # Skip already paid salaries (VERY IMPORTANT)
-        txn = SalaryTransaction.objects.filter(
+        # Skip already paid salaries (CRITICAL: Never modify paid records)
+        salary_report = SalaryReport.objects.filter(
             user=user,
-            payment_period_start=report.start_date,
-            payment_period_end=report.end_date,
-            status="SUCCESS"
+            start_date=report.start_date,
+            end_date=report.end_date,
         ).first()
 
-        if txn:
-            continue  # Never touch paid payrolls
+        # If already paid, skip entirely
+        if salary_report and salary_report.paid_amount > 0:
+            continue
 
         payroll = calculator.calculate_payroll(
             base_date=report.end_date,
@@ -137,13 +140,14 @@ def update_salary_transactions_on_salary_change(sender, instance, **kwargs):
         if total_payable <= 0:
             continue
 
-        SalaryTransaction.objects.update_or_create(
+        # Use update_or_create for efficiency
+        SalaryReport.objects.update_or_create(
             user=user,
-            payment_period_start=report.start_date,
-            payment_period_end=report.end_date,
+            start_date=report.start_date,
+            end_date=report.end_date,
             defaults={
                 "total_payable_amount": total_payable,
                 "daily_rate": daily_rate,
-                "remaining_payment": total_payable,
             }
         )
+

@@ -1,9 +1,10 @@
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import SalaryStructure, SalaryTransaction
-from .serializers import SalaryStructureSerializer,SalaryTransactionSerializer
+from .models import SalaryStructure, SalaryReport
+from .serializers import SalaryStructureSerializer,SalaryReportSerializer
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from datetime import datetime, timedelta
+from rest_framework.views import APIView
  
 class SalaryStructureViewSet(viewsets.ModelViewSet):
     """
@@ -46,69 +47,93 @@ class SalaryStructureViewSet(viewsets.ModelViewSet):
             queryset = SalaryStructure.objects.filter(user=user)
         return queryset.select_related("user").order_by("-effective_from")
 
+class SalaryReportAPIView(APIView):
+    """
+    READ-ONLY Salary Report API
 
-class SalaryTransactionViewSet(viewsets.ModelViewSet):
+    GET /api/salary-reports/
+    GET /api/salary-reports/<id>/
+
+    Filters:
+    - Default: last 6 months
+    - ?year=YYYY
+    - ?start_date=YYYY-MM-DD
+    - ?end_date=YYYY-MM-DD
     """
-    Payroll SalaryTransaction API
-    """
-    serializer_class = SalaryTransactionSerializer
+
     permission_classes = [IsAuthenticated]
-    filterset_fields = ['status', 'user_id']
-    search_fields = ['user__first_name', 'user__last_name', 'user__email', 'payment_reference']
-    ordering_fields = ['created_at', 'status', 'amount', 'user__first_name']
-    ordering = ['-created_at']
-    def get_queryset(self):
-        user = self.request.user
 
-        # Owner can see all, others only their salary
+    # -------------------- Base queryset --------------------
+    def get_base_queryset(self, request):
+        user = request.user
+
         if user.is_superuser:
-            return SalaryTransaction.objects.all()
+            return SalaryReport.objects.all()
 
         if user.is_owner:
-            return SalaryTransaction.objects.filter(user__hierarchy__owner=user)
+            return SalaryReport.objects.filter(user__hierarchy__owner=user)
+
         if user.is_manager or user.is_vsre_staff:
-            return SalaryTransaction.objects.filter(user=user)
+            return SalaryReport.objects.filter(user=user)
 
-    def perform_update(self, serializer):
-        instance = self.get_object()
+        return SalaryReport.objects.none()
 
-        # Prevent update after payment success
-        if instance.status == "SUCCESS":
-            raise ValueError("Paid salary cannot be modified")
+    # -------------------- Date filters --------------------
+    def apply_date_filters(self, request, queryset):
+        params = request.query_params
 
-        serializer.save()
+        # ----- Year filter (highest priority) -----
+        year = params.get("year")
+        if year:
+            try:
+                year = int(year)
+                return queryset.filter(start_date__year=year)
+            except ValueError:
+                return queryset.none()
 
-    # -------------------------------
-    # Custom Actions
-    # -------------------------------
+        # ----- Default: last 6 months -----
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=180)
 
-    @action(detail=True, methods=["post"])
-    def mark_processing(self, request, pk=None):
-        txn = self.get_object()
-        txn.mark_as_processing()
-        return Response({"status": "PROCESSING"})
+        # ----- Custom override -----
+        custom_start = params.get("start_date")
+        custom_end = params.get("end_date")
 
-    @action(detail=True, methods=["post"])
-    def mark_paid(self, request, pk=None):
-        txn = self.get_object()
+        if custom_start:
+            try:
+                start_date = datetime.strptime(custom_start, "%Y-%m-%d").date()
+            except ValueError:
+                return queryset.none()
 
-        paid_amount = request.data.get("paid_amount")
-        payment_reference = request.data.get("payment_reference")
+        if custom_end:
+            try:
+                end_date = datetime.strptime(custom_end, "%Y-%m-%d").date()
+            except ValueError:
+                return queryset.none()
 
-        txn.mark_as_paid(
-            paid_amount=paid_amount,
-            payment_reference=payment_reference
+        return queryset.filter(
+            start_date__gte=start_date,
+            end_date__lte=end_date,
         )
 
-        return Response(
-            SalaryTransactionSerializer(txn).data,
-            status=status.HTTP_200_OK
-        )
+    # -------------------- GET --------------------
+    def get(self, request, pk=None):
+        queryset = self.get_base_queryset(request)
+        queryset = self.apply_date_filters(request, queryset)
 
-    @action(detail=True, methods=["post"])
-    def mark_failed(self, request, pk=None):
-        txn = self.get_object()
-        reason = request.data.get("reason")
+        # ----- Retrieve single report -----
+        if pk:
+            try:
+                report = queryset.get(pk=pk)
+            except SalaryReport.DoesNotExist:
+                return Response(
+                    {"detail": "Salary report not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
-        txn.mark_as_failed(reason=reason)
-        return Response({"status": "FAILED"})
+            serializer = SalaryReportSerializer(report)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # ----- List reports -----
+        serializer = SalaryReportSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

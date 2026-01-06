@@ -36,6 +36,7 @@ class SalaryCalculator:
             .filter(
                 user=self.user,
                 effective_from__lte=check_date,
+                change_type__in=["BASE_SALARY","INCREMENT"]
             )
             .order_by("-effective_from")
             .first()
@@ -88,7 +89,8 @@ class SalaryCalculator:
             SalaryStructure.objects
             .filter(
                 user=self.user,
-                effective_from__lte=end_date
+                effective_from__lte=end_date,
+                change_type__in=["BASE_SALARY","INCREMENT"]
             )
             .order_by("-effective_from")
         )
