@@ -120,6 +120,7 @@ class SalaryTransaction(models.Model):
     transaction_id = models.CharField(
         max_length=50,
         unique=True,
+        null=True,
         db_index=True
     )
 
@@ -208,11 +209,13 @@ class SalaryTransaction(models.Model):
         )
 
     def save(self, *args, **kwargs):
-        if self.transaction_id:
+        FINAL_STATUSES = {"SUCCESS", "FAILED", "CANCELLED"}
+
+        if not self.transaction_id and self.status in FINAL_STATUSES:
             self.transaction_id = self.generate_transaction_id()
 
-        self.remaining_payment = max(
-            self.total_payable_amount - self.paid_amount, 0
+        self.remaining_payment = (
+            self.total_payable_amount - self.paid_amount
         )
 
         super().save(*args, **kwargs)
