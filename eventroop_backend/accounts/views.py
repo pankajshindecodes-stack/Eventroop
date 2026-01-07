@@ -7,7 +7,6 @@ from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated,AllowAny
-from eventroop_backend.pagination import StandardResultsSetPagination
 from django.shortcuts import get_object_or_404
 from .permissions import IsVSREOwner,IsCreator,IsVSREOwnerOrManager,IsMasterAdmin
 from .models import CustomUser, UserHierarchy, PricingModel, UserPlan

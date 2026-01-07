@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from rest_framework.views import APIView
 from dateutil.relativedelta import relativedelta
 from django.db import transaction as db_transaction
-from rest_framework.decorators import action
+from eventroop_backend.pagination import 
 
 class SalaryStructureViewSet(viewsets.ModelViewSet):
     """
@@ -153,13 +153,12 @@ class SalaryReportAPIView(APIView):
 
 class SalaryTransactionViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
-   
     def list(self, request):
         """
         GET /api/salary-transactions/
         List all salary transactions
         """
-        transactions = SalaryTransaction.objects.all().order_by('-created_at')
+        transactions = SalaryTransaction.objects.all().order_by('created_at')
         
         # Optional filters
         status_filter = request.query_params.get('status')
@@ -171,6 +170,7 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
             transactions = transactions.filter(salary_report__user_id=user_filter)
         
         serializer = SalaryTransactionSerializer(transactions, many=True)
+        
         return Response(serializer.data)
 
     @db_transaction.atomic
@@ -207,13 +207,6 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
                 existing_transaction.note = serializer.validated_data.get('note', '')
                 existing_transaction.processed_at = timezone.now()
                 existing_transaction.save()
-                
-            elif existing_transaction.status == 'SUCCESS':
-                # Already paid - return error
-                return Response(
-                    {'detail': 'Transaction already paid for this salary report.'},
-                    status=status.HTTP_302_FOUND,
-                )
             
             elif existing_transaction.status in ['FAILED', 'CANCELLED']:
                 # Create new transaction
