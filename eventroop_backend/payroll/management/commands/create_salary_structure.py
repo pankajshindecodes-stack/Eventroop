@@ -14,8 +14,6 @@ class Command(BaseCommand):
 
         SALARY_TYPES = ["HOURLY", "DAILY", "WEEKLY", "FORTNIGHTLY", "MONTHLY"]
 
-        print(f"Users found: {len(users)}")
-
         created_count = 0
         list_Data  = []
         for user in users:

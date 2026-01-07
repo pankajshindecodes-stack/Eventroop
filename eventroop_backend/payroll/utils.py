@@ -45,8 +45,10 @@ class SalaryCalculator:
     # --------------------------------------------------
     # Salary Calculations
     # --------------------------------------------------
-    def _daily_rate(self, salary_obj, salary_type):
-        """Calculate daily rate based on salary structure and type."""
+    def _daily_rate(self, salary_obj, salary_type, period_start=None):
+        """
+        Calculate daily rate based on salary structure and salary type.
+        """
         if not salary_obj:
             return Decimal("0")
 
@@ -54,18 +56,24 @@ class SalaryCalculator:
 
         if salary_type == "HOURLY":
             return salary * self.HOURS_PER_DAY
+
         if salary_type == "DAILY":
             return salary
+
         if salary_type == "WEEKLY":
             return salary / self.DAYS_PER_WEEK
+
         if salary_type == "FORTNIGHTLY":
             return salary / self.DAYS_PER_FORTNIGHT
 
-        return salary / self.DAYS_PER_MONTH  # MONTHLY
+        # MONTHLY → dynamic calendar days
+        days_in_month = self._days_in_month(period_start)
+        return salary / days_in_month
 
-    def _calculate_salary(self, salary_obj, salary_type, payable_days):
+
+    def _calculate_salary(self, salary_obj, salary_type, payable_days, period_start):
         """Calculate salary for a period with a specific salary structure."""
-        daily_rate = self._daily_rate(salary_obj, salary_type).quantize(Decimal("0.01"))
+        daily_rate = self._daily_rate(salary_obj, salary_type,period_start).quantize(Decimal("0.01"))
         current_payment = (daily_rate * Decimal(str(payable_days))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
@@ -159,7 +167,8 @@ class SalaryCalculator:
             salary_calc = self._calculate_salary(
                 salary, 
                 salary_type, 
-                attendance_report["total_payable_days"]
+                attendance_report["total_payable_days"],
+                period_start
             )
 
             return {
@@ -178,7 +187,8 @@ class SalaryCalculator:
                 salary_calc = self._calculate_salary(
                     salary,
                     sal_type,
-                    period_attendance["total_payable_days"]
+                    period_attendance["total_payable_days"],
+                    period_start
                 )
 
                 final_daily_rate = Decimal(str(salary_calc["daily_rate"]))
@@ -219,7 +229,7 @@ class SalaryCalculator:
             
             if len(salary_periods) == 1:
                 salary, salary_type, _, _ = salary_periods[0]
-                salary_calc = self._calculate_salary(salary, salary_type, report["total_payable_days"])
+                salary_calc = self._calculate_salary(salary, salary_type, report["total_payable_days"],period_start)
             else:
                 total_current_payment = Decimal("0")
                 final_daily_rate = Decimal("0")
@@ -229,7 +239,8 @@ class SalaryCalculator:
                     salary_calc = self._calculate_salary(
                         salary,
                         sal_type,
-                        period_attendance["total_payable_days"]
+                        period_attendance["total_payable_days"],
+                        period_start
                     )
                     final_daily_rate = Decimal(str(salary_calc["daily_rate"]))
                     total_current_payment += Decimal(str(salary_calc["current_payment"]))

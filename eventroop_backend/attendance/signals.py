@@ -60,7 +60,7 @@ def update_salary_report(user, period_start, period_end, period_type):
     """Extract common salary report update logic."""
     try:
         calculator = SalaryCalculator(user=user, base_date=period_end)
-
+        
         payroll_data = calculator.calculate_payroll(
             base_date=period_end,
             period_type=period_type
@@ -69,9 +69,6 @@ def update_salary_report(user, period_start, period_end, period_type):
         total_payable_amount = Decimal(str(payroll_data.get("current_payment", 0)))
         daily_rate = Decimal(str(payroll_data.get("daily_rate", 0)))
 
-        if total_payable_amount <= 0:
-            return
-
         # Check if already paid
         existing_report = SalaryReport.objects.filter(
             user=user,
@@ -79,10 +76,11 @@ def update_salary_report(user, period_start, period_end, period_type):
             end_date=period_end
         ).first()
         
-        remaining_payment = existing_report.total_payable_amount - existing_report.paid_amount
+        remaining_payment = 0 
+        if existing_report: 
+            remaining_payment = existing_report.total_payable_amount - existing_report.paid_amount
         
-
-        SalaryReport.objects.update_or_create(
+        instance, created = SalaryReport.objects.update_or_create(
             user=user,
             start_date=period_start,
             end_date=period_end,
@@ -93,7 +91,7 @@ def update_salary_report(user, period_start, period_end, period_type):
             }
         )
     except Exception as e:
-        print(e)
+        print("Error:",e)
 
 
 def clear_cache(user_id):
