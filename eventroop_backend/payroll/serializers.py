@@ -90,22 +90,20 @@ class SalaryTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = SalaryTransaction
         fields = [
+            'employee_name',
             'id',
             'transaction_id',
             'salary_report_id',
             'start_date',
             'end_date',
-            'employee_name',
             'amount_paid',
             'payment_method',
             'payment_reference',
-            'status',
             'processed_at',
             'note',
-            'created_at',
-            'updated_at',
+            'status',
         ]
-        read_only_fields = ['transaction_id','start_date','end_date', 'processed_at', 'created_at', 'updated_at']
+        read_only_fields = ['transaction_id','start_date','end_date', 'processed_at']
 
 
 class SalaryTransactionCreateSerializer(serializers.Serializer):
