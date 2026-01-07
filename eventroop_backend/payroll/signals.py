@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db import transaction
-from .models import SalaryStructure,SalaryReport,SalaryTransaction
+from .models import SalaryStructure,SalaryReport
 from .utils import SalaryCalculator
 from attendance.models import AttendanceReport
 from decimal import Decimal
@@ -125,15 +125,10 @@ def update_salary_reports_on_salary_change(sender, instance, **kwargs):
             end_date=report.end_date,
         ).first()
 
-        # If already paid, skip entirely
-        if salary_report and salary_report.paid_amount > 0:
-            continue
-
         payroll = calculator.calculate_payroll(
             base_date=report.end_date,
             period_type=report.period_type
         )
-
         total_payable = Decimal(str(payroll["current_payment"]))
         daily_rate = Decimal(str(payroll["daily_rate"]))
 
