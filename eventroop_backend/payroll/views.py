@@ -208,19 +208,16 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
                 existing_transaction.processed_at = timezone.now()
                 existing_transaction.save()
                 
-                transaction = existing_transaction
-                action = "updated"
-                
             elif existing_transaction.status == 'SUCCESS':
                 # Already paid - return error
                 return Response(
                     {'detail': 'Transaction already paid for this salary report.'},
-                    status=status.HTTP_400_BAD_REQUEST,
+                    status=status.HTTP_302_FOUND,
                 )
             
             elif existing_transaction.status in ['FAILED', 'CANCELLED']:
                 # Create new transaction
-                transaction = SalaryTransaction.objects.create(
+                SalaryTransaction.objects.create(
                     salary_report=salary_report,
                     amount_paid=amount_paid,
                     payment_method=serializer.validated_data['payment_method'],
@@ -229,10 +226,9 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
                     processed_at=timezone.now(),
                     status='SUCCESS',
                 )
-                action = "created"
         else:
             # No existing transaction - create new one
-            transaction = SalaryTransaction.objects.create(
+            SalaryTransaction.objects.create(
                 salary_report=salary_report,
                 amount_paid=amount_paid,
                 payment_method=serializer.validated_data['payment_method'],
@@ -241,8 +237,6 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
                 processed_at=timezone.now(),
                 status='SUCCESS',
             )
-            action = "created"
-
         # Update salary report when transaction is SUCCESS
         salary_report.paid_amount = SalaryTransaction.objects.filter(
             salary_report_id=salary_report_id,
@@ -257,11 +251,7 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
         )
         salary_report.save(update_fields=['paid_amount', 'remaining_payment', 'updated_at'])
 
-        output_serializer = SalaryTransactionSerializer(transaction)
         return Response(
-            {
-                'action': action,
-                'transaction': output_serializer.data
-            },
-            status=status.HTTP_201_CREATED if action == "created" else status.HTTP_200_OK
+            {'detail': 'Payment processed successfully.'},
+            status=status.HTTP_200_OK
         )

@@ -224,12 +224,11 @@ class SalaryTransaction(models.Model):
     )
 
     # -------------------- Relations --------------------
-    salary_report = models.OneToOneField(
+    salary_report = models.ForeignKey(
         SalaryReport,
         on_delete=models.PROTECT,
-        related_name="transaction",
+        related_name="transactions",
     )
-
     # -------------------- Payment --------------------
     amount_paid = models.DecimalField(
         max_digits=12,
