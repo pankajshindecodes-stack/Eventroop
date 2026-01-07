@@ -85,21 +85,12 @@ def recalculate_affected_salary_reports(user, effective_from):
     
     if not affected_reports.exists():
         return
-    
-    # Get all paid salary records at once to avoid N+1
-    paid_salary_dates = set(
-        SalaryReport.objects
-        .filter(user=user, paid_amount__gt=0)
-        .values_list('start_date', 'end_date')
-    )
-    
+        
     calculator = SalaryCalculator(user=user)
     updates = []
     
     for report in affected_reports:
-        # Skip already paid salaries
-        if (report.start_date, report.end_date) in paid_salary_dates:
-            continue
+        
         
         payroll = calculator.calculate_payroll(
             base_date=report.end_date,
