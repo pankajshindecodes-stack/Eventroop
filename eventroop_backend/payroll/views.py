@@ -158,7 +158,7 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
     serializer_class = SalaryTransactionSerializer
 
     def get_queryset(self):
-        queryset = SalaryTransaction.objects.all().order_by('-created_at')
+        queryset = SalaryTransaction.objects.all()
 
         status_filter = self.request.query_params.get('status')
         if status_filter:
