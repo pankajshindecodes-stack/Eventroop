@@ -7,7 +7,10 @@ from datetime import datetime, timedelta
 from rest_framework.views import APIView
 from dateutil.relativedelta import relativedelta
 from django.db import transaction as db_transaction
-from eventroop_backend.pagination import 
+from django.utils import timezone
+from django.db.models import Sum
+
+
 
 class SalaryStructureViewSet(viewsets.ModelViewSet):
     """
@@ -151,55 +154,46 @@ class SalaryReportAPIView(APIView):
         serializer = SalaryReportSerializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-class SalaryTransactionViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
-    def list(self, request):
-        """
-        GET /api/salary-transactions/
-        List all salary transactions
-        """
-        transactions = SalaryTransaction.objects.all().order_by('created_at')
-        
-        # Optional filters
-        status_filter = request.query_params.get('status')
+class SalaryTransactionViewSet(viewsets.ModelViewSet):
+    serializer_class = SalaryTransactionSerializer
+
+    def get_queryset(self):
+        queryset = SalaryTransaction.objects.all().order_by('-created_at')
+
+        status_filter = self.request.query_params.get('status')
         if status_filter:
-            transactions = transactions.filter(status=status_filter)
-        
-        user_filter = request.query_params.get('user_id')
+            queryset = queryset.filter(status=status_filter)
+
+        user_filter = self.request.query_params.get('user_id')
         if user_filter:
-            transactions = transactions.filter(salary_report__user_id=user_filter)
-        
-        serializer = SalaryTransactionSerializer(transactions, many=True)
-        
-        return Response(serializer.data)
+            queryset = queryset.filter(
+                salary_report__user_id=user_filter
+            )
+
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return SalaryTransactionCreateSerializer
+        return SalaryTransactionSerializer
 
     @db_transaction.atomic
-    def create(self, request):
-        """
-        POST /api/salary-transactions/
-        Create or update salary transaction based on existing transaction status
-        
-        Rules:
-        - If PENDING/PROCESSING: Update existing transaction to SUCCESS
-        - If FAILED/CANCELLED: Create new transaction
-        - If SUCCESS: Return error (already paid)
-        """
-        serializer = SalaryTransactionCreateSerializer(data=request.data)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        salary_report_id = serializer.validated_data['salary_report_id']
-        salary_report = SalaryReport.objects.get(id=salary_report_id)
+        salary_report = SalaryReport.objects.select_for_update().get(
+            id=serializer.validated_data['salary_report_id']
+        )
+
         amount_paid = serializer.validated_data['amount_paid']
-        
-        # Check if transaction exists
+
         existing_transaction = SalaryTransaction.objects.filter(
-            salary_report_id=salary_report_id
-        ).first()
+            salary_report=salary_report
+        ).order_by('-created_at').first()
 
         if existing_transaction:
-            # Transaction exists - check its status
             if existing_transaction.status in ['PENDING', 'PROCESSING']:
-                # Update existing transaction to SUCCESS
                 existing_transaction.status = 'SUCCESS'
                 existing_transaction.amount_paid = amount_paid
                 existing_transaction.payment_method = serializer.validated_data['payment_method']
@@ -207,9 +201,8 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
                 existing_transaction.note = serializer.validated_data.get('note', '')
                 existing_transaction.processed_at = timezone.now()
                 existing_transaction.save()
-            
+
             elif existing_transaction.status in ['FAILED', 'CANCELLED']:
-                # Create new transaction
                 SalaryTransaction.objects.create(
                     salary_report=salary_report,
                     amount_paid=amount_paid,
@@ -220,7 +213,6 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
                     status='SUCCESS',
                 )
         else:
-            # No existing transaction - create new one
             SalaryTransaction.objects.create(
                 salary_report=salary_report,
                 amount_paid=amount_paid,
@@ -230,21 +222,21 @@ class SalaryTransactionViewSet(viewsets.ViewSet):
                 processed_at=timezone.now(),
                 status='SUCCESS',
             )
-        # Update salary report when transaction is SUCCESS
-        salary_report.paid_amount = SalaryTransaction.objects.filter(
-            salary_report_id=salary_report_id,
+
+        # 🔥 Update SalaryReport totals
+        paid_amount = SalaryTransaction.objects.filter(
+            salary_report=salary_report,
             status='SUCCESS'
-        ).aggregate(total=models.Sum('amount_paid'))['total'] or 0
-        
-        salary_report.remaining_payment = (
-            salary_report.total_payable_amount - salary_report.paid_amount
+        ).aggregate(total=Sum('amount_paid'))['total'] or 0
+
+        salary_report.paid_amount = paid_amount
+        salary_report.remaining_payment = salary_report.total_payable_amount - paid_amount
+        salary_report.advance_amount = max(paid_amount - salary_report.total_payable_amount, 0)
+        salary_report.save(
+            update_fields=['paid_amount', 'remaining_payment', 'advance_amount', 'updated_at']
         )
-        salary_report.advance_amount = abs(
-            salary_report.total_payable_amount - salary_report.paid_amount
-        )
-        salary_report.save(update_fields=['paid_amount', 'remaining_payment', 'updated_at'])
 
         return Response(
-            {'detail': 'Payment processed successfully.'},
+            {'detail': 'Payment paid successfully.'},
             status=status.HTTP_200_OK
         )
