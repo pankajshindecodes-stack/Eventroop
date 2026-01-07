@@ -4,8 +4,7 @@ from django.utils import timezone
 from django.db.models import Q, F
 from decimal import Decimal
 from django.core.validators import MinValueValidator
-
-
+import uuid
 
 class SalaryStructure(models.Model):
 
@@ -159,46 +158,28 @@ class SalaryReport(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     # -------------------- Computed --------------------
-    @property
-    def final_salary(self):
-        """
-        Fetch applicable salary structure for the report period.
-        """
-        salary = (
-            SalaryStructure.objects
-            .filter(
-                user=self.user,
-                effective_from__lte=self.end_date,
-                change_type__in=["BASE_SALARY","INCREMENT"]
-            )
-            .order_by("-effective_from")
-            .first()
-        )
-        return salary.final_salary if salary else Decimal("0.00")
-    
-    @property
-    def advance_amount(self):
-        """
-        Fetch applicable salary structure for the report period.
-        """
-
-        salary = (
-            SalaryStructure.objects
-            .filter(
-                user=self.user,
-                effective_from__lte=self.end_date,
-                change_type__in=["ADVANCE","LOAN"]
-            )
-            .order_by("-effective_from")
-            .first()
-        )
-        return salary.amount if salary else Decimal("0.00")
-
+    final_salary = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00")
+    )
+    advance_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00")
+    )
     # -------------------- Overrides --------------------
     def save(self, *args, **kwargs):
         """
         Auto-calculate remaining payment and adjust advance if needed.
         """
+        salary_structure = SalaryStructure.objects.filter(user=self.user,effective_from__lte=self.end_date).order_by("-effective_from")
+        salary = salary_structure.filter(change_type__in=["BASE_SALARY", "INCREMENT"]).first()
+        self.final_salary = salary.final_salary if salary else Decimal("0.00")
+        
+        advance = salary_structure.filter(change_type__in=["ADVANCE", "LOAN"]).first()
+        self.advance_amount = advance.amount if advance else Decimal("0.00")
+
         self.remaining_payment = self.total_payable_amount - self.paid_amount        
         super().save(*args, **kwargs)
     # -------------------- Meta --------------------
@@ -211,151 +192,102 @@ class SalaryReport(models.Model):
 
     def __str__(self):
         return f"{self.user} | {self.start_date} → {self.end_date}"
-    
-# class SalaryTransaction(models.Model):
-#     """
-#     Payroll / Salary payment transaction
-#     Records actual payment against an approved salary report
-#     """
 
-#     PAYMENT_METHOD_CHOICES = [
-#         ("BANK_TRANSFER", "Bank Transfer"),
-#         ("CHECK", "Check"),
-#         ("CASH", "Cash"),
-#         ("UPI", "UPI"),
-#         ("OTHER", "Other"),
-#     ]
+class SalaryTransaction(models.Model):
+    """
+    Records actual salary payment against a SalaryReport.
+    Immutable financial transaction record.
+    """
 
-#     STATUS_CHOICES = [
-#         ("PENDING", "Pending"),
-#         ("PROCESSING", "Processing"),
-#         ("SUCCESS", "Success"),
-#         ("FAILED", "Failed"),
-#         ("CANCELLED", "Cancelled"),
-#     ]
+    PAYMENT_METHOD_CHOICES = [
+        ("BANK_TRANSFER", "Bank Transfer"),
+        ("UPI", "UPI"),
+        ("CASH", "Cash"),
+        ("CHECK", "Check"),
+        ("OTHER", "Other"),
+    ]
 
-#     transaction_id = models.CharField(
-#         max_length=50,
-#         unique=True,
-#         null=True,
-#         db_index=True
-#     )
+    STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("PROCESSING", "Processing"),
+        ("SUCCESS", "Success"),
+        ("FAILED", "Failed"),
+        ("CANCELLED", "Cancelled"),
+    ]
 
-#     # Link to salary report (source of truth for calculations)
-#     salary_report = models.OneToOneField(
-#         SalaryReport,
-#         on_delete=models.PROTECT,
-#         related_name="transaction",
-#         help_text="Reference to the approved salary report"
-#     )
+    # -------------------- Identity --------------------
+    transaction_id = models.CharField(
+        max_length=20,
+        unique=True,
+        editable=False,
+        db_index=True,
+    )
 
-#     # Payment amounts
-#     amount_to_pay = models.DecimalField(
-#         max_digits=12,
-#         decimal_places=2,
-#         help_text="Amount to be paid (from salary_report.net_payable)"
-#     )
+    # -------------------- Relations --------------------
+    salary_report = models.OneToOneField(
+        SalaryReport,
+        on_delete=models.PROTECT,
+        related_name="transaction",
+    )
 
-#     amount_paid = models.DecimalField(
-#         max_digits=12,
-#         decimal_places=2,
-#         default=0,
-#         help_text="Actual amount paid"
-#     )
+    # -------------------- Payment --------------------
+    amount_paid = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Actual amount paid",
+    )
 
-#     payment_method = models.CharField(
-#         max_length=20,
-#         choices=PAYMENT_METHOD_CHOICES,
-#         default="CASH"
-#     )
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+    )
 
-#     payment_reference = models.CharField(
-#         max_length=100,
-#         blank=True,
-#         null=True,
-#         unique=True,
-#         help_text="Bank reference, check number, UPI transaction ID, etc."
-#     )
+    payment_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Bank / UPI / cheque reference",
+    )
 
-#     status = models.CharField(
-#         max_length=20,
-#         choices=STATUS_CHOICES,
-#         default="PENDING",
-#         db_index=True
-#     )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="PENDING",
+        db_index=True,
+    )
 
-#     note = models.TextField(blank=True, null=True)
+    processed_at = models.DateTimeField(blank=True, null=True)
 
-#     processed_at = models.DateTimeField(blank=True, null=True)
+    note = models.TextField(blank=True, null=True)
 
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
+    # -------------------- Audit --------------------
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-#     class Meta:
-#         ordering = ["-created_at"]
-#         indexes = [
-#             models.Index(fields=["salary_report__user", "-processed_at"]),
-#             models.Index(fields=["status", "created_at"]),
-#         ]
-#         constraints = [
-#             models.CheckConstraint(
-#                 check=Q(amount_to_pay__gt=0),
-#                 name="amount_to_pay_positive"
-#             ),
-#         ]
+    # -------------------- Meta --------------------
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=Q(amount_paid__gte=0),
+                name="amount_paid_non_negative",
+            ),
+        ]
 
-#     def __str__(self):
-#         return (
-#             f"{self.salary_report.user.get_full_name()} | "
-#             f"Transaction: {self.transaction_id} | Amount: {self.amount_paid}"
-#         )
+    def __str__(self):
+        return f"{self.transaction_id} | {self.salary_report.user}"
 
-#     def save(self, *args, **kwargs):
-#         FINAL_STATUSES = {"SUCCESS", "FAILED", "CANCELLED"}
+    # -------------------- Save --------------------
+    def save(self, *args, **kwargs):
+        if not self.transaction_id:
+            self.transaction_id = self.generate_transaction_id()
 
-#         # Generate transaction ID only for final statuses
-#         if not self.transaction_id and self.status in FINAL_STATUSES:
-#             self.transaction_id = self.generate_transaction_id()
+        # Set processed time on final states
+        if self.status in {"SUCCESS", "FAILED", "CANCELLED"} and not self.processed_at:
+            self.processed_at = timezone.now()
+        super().save(*args, **kwargs)
 
-#         super().save(*args, **kwargs)
-
-#     @staticmethod
-#     def generate_transaction_id():
-#         import uuid
-#         return f"SAL{uuid.uuid4().hex[:12].upper()}"
-
-#     # Status helpers
-#     def mark_as_processing(self):
-#         """Mark transaction as processing"""
-#         self.status = "PROCESSING"
-#         self.save(update_fields=["status", "updated_at"])
-
-#     def mark_as_paid(self, paid_amount=None, payment_reference=None):
-#         """Mark transaction as successfully paid"""
-#         self.status = "SUCCESS"
-#         self.processed_at = timezone.now()
-#         self.amount_paid = paid_amount or self.amount_to_pay
-#         if payment_reference:
-#             self.payment_reference = payment_reference
-#         self.save()
-
-#     def mark_as_failed(self, reason=None):
-#         """Mark transaction as failed"""
-#         self.status = "FAILED"
-#         if reason:
-#             self.note = reason
-#         self.save()
-
-#     def mark_as_cancelled(self, reason=None):
-#         """Mark transaction as cancelled"""
-#         self.status = "CANCELLED"
-#         if reason:
-#             self.note = reason
-#         self.save()
-
-#     def is_fully_paid(self):
-#         """Check if transaction is fully paid"""
-#         return (
-#             self.amount_paid == self.amount_to_pay and
-#             self.status == "SUCCESS"
-#         )
+    # -------------------- Helpers --------------------
+    @staticmethod
+    def generate_transaction_id():
+        return f"SAL{uuid.uuid4().hex[:12].upper()}"

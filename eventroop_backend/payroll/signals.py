@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db import transaction
-from .models import SalaryStructure,SalaryReport
+from .models import SalaryStructure,SalaryReport,SalaryTransaction
 from .utils import SalaryCalculator
 from attendance.models import AttendanceReport
 from decimal import Decimal
@@ -150,4 +150,3 @@ def update_salary_reports_on_salary_change(sender, instance, **kwargs):
                 "daily_rate": daily_rate,
             }
         )
-

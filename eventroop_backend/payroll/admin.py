@@ -2,10 +2,10 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Q
-from .models import SalaryStructure, SalaryReport
+from .models import SalaryStructure, SalaryReport,SalaryTransaction
 
 
-
+admin.site.register(SalaryTransaction)
 # ------------------------------------------
 # Custom Filters
 # ------------------------------------------
@@ -136,7 +136,8 @@ class SalaryReportAdmin(admin.ModelAdmin):
         "total_payable_amount",
         "paid_amount",
         "remaining_payment",
-        "display_advance_amount",
+        "advance_amount",
+        "final_salary",
         "created_at",
     )
 
@@ -160,7 +161,7 @@ class SalaryReportAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "final_salary",
-        "display_advance_amount",
+        "advance_amount",
     )
 
     # -------------------- Fieldsets --------------------
@@ -181,7 +182,7 @@ class SalaryReportAdmin(admin.ModelAdmin):
                 "paid_amount",
                 "remaining_payment",
                 "final_salary",
-                "display_advance_amount",
+                "advance_amount",
             ),
         }),
         ("Audit", {
@@ -191,11 +192,6 @@ class SalaryReportAdmin(admin.ModelAdmin):
             ),
         }),
     )
-
-    # -------------------- Computed Display --------------------
-    @admin.display(description="Advance Amount")
-    def display_advance_amount(self, obj):
-        return obj.advance_amount
 
     # -------------------- Admin Protections --------------------
     def has_delete_permission(self, request, obj=None):

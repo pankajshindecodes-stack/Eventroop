@@ -1,7 +1,6 @@
 # serializers.py
 from rest_framework import serializers
-from .models import SalaryStructure, SalaryReport
-from accounts.models import CustomUser
+from .models import SalaryStructure, SalaryReport,SalaryTransaction
 
 
 class SalaryStructureSerializer(serializers.ModelSerializer):
@@ -81,3 +80,50 @@ class SalaryReportSerializer(serializers.ModelSerializer):
         return obj.advance_amount
     def get_final_salary(self, obj):
         return obj.final_salary
+    
+class SalaryTransactionSerializer(serializers.ModelSerializer):
+    salary_report_id = serializers.IntegerField(source='salary_report.id', read_only=True)
+    start_date = serializers.DateField(source='salary_report.start_date', read_only=True)
+    end_date = serializers.DateField(source='salary_report.end_date', read_only=True)
+    employee_name = serializers.CharField(source='salary_report.user.get_full_name', read_only=True)
+
+    class Meta:
+        model = SalaryTransaction
+        fields = [
+            'id',
+            'transaction_id',
+            'salary_report_id',
+            'start_date',
+            'end_date',
+            'employee_name',
+            'amount_paid',
+            'payment_method',
+            'payment_reference',
+            'status',
+            'processed_at',
+            'note',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['transaction_id','start_date','end_date', 'processed_at', 'created_at', 'updated_at']
+
+
+class SalaryTransactionCreateSerializer(serializers.Serializer):
+    salary_report_id = serializers.IntegerField()
+    amount_paid = serializers.DecimalField(max_digits=12, decimal_places=2)
+    payment_method = serializers.ChoiceField(choices=SalaryTransaction.PAYMENT_METHOD_CHOICES)
+    payment_reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    note = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_amount_paid(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Amount paid must be greater than 0.")
+        return value
+
+    def validate_salary_report_id(self, value):
+        try:
+            SalaryReport.objects.get(id=value)
+        except SalaryReport.DoesNotExist:
+            raise serializers.ValidationError("Salary report not found.")
+        return value
+
