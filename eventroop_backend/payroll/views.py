@@ -192,26 +192,14 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
             salary_report=salary_report
         ).order_by('-created_at').first()
 
-        if existing_transaction:
-            if existing_transaction.status in ['PENDING', 'PROCESSING']:
-                existing_transaction.status = 'SUCCESS'
-                existing_transaction.amount_paid = amount_paid
-                existing_transaction.payment_method = serializer.validated_data['payment_method']
-                existing_transaction.payment_reference = serializer.validated_data.get('payment_reference', '')
-                existing_transaction.note = serializer.validated_data.get('note', '')
-                existing_transaction.processed_at = timezone.now()
-                existing_transaction.save()
-
-            elif existing_transaction.status in ['FAILED', 'CANCELLED']:
-                SalaryTransaction.objects.create(
-                    salary_report=salary_report,
-                    amount_paid=amount_paid,
-                    payment_method=serializer.validated_data['payment_method'],
-                    payment_reference=serializer.validated_data.get('payment_reference', ''),
-                    note=serializer.validated_data.get('note', ''),
-                    processed_at=timezone.now(),
-                    status='SUCCESS',
-                )
+        if existing_transaction and existing_transaction.status in ['PENDING', 'PROCESSING']:
+            existing_transaction.status = 'SUCCESS'
+            existing_transaction.amount_paid = amount_paid
+            existing_transaction.payment_method = serializer.validated_data['payment_method']
+            existing_transaction.payment_reference = serializer.validated_data.get('payment_reference', '')
+            existing_transaction.note = serializer.validated_data.get('note', '')
+            existing_transaction.processed_at = timezone.now()
+            existing_transaction.save()
         else:
             SalaryTransaction.objects.create(
                 salary_report=salary_report,
@@ -223,7 +211,7 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
                 status='SUCCESS',
             )
 
-        # 🔥 Update SalaryReport totals
+        # Update SalaryReport totals
         paid_amount = SalaryTransaction.objects.filter(
             salary_report=salary_report,
             status='SUCCESS'
