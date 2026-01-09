@@ -6,5 +6,6 @@ router = DefaultRouter()
 router.register("public-venues", PublicVenueViewSet, basename="public-venues")
 router.register("public-services", PublicServiceViewSet, basename="public-services")
 router.register("patients", PatientViewSet, basename="patients")
+router.register("location", LocationViewSet, basename="location")
 
 urlpatterns = router.urls

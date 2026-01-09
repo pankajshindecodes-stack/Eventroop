@@ -10,6 +10,14 @@ class Location(models.Model):
         ("PARTNER", "Partner"),
         ("CLIENT", "Client"),
     ]
+    
+    user = models.ForeignKey(
+        CustomUser,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="user_location",
+    )
 
     location_type = models.CharField(
         max_length=20,

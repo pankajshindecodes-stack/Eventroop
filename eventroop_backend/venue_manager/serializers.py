@@ -101,6 +101,7 @@ class VenueSerializer(serializers.ModelSerializer):
             "state": validated_data.pop("state"),
             "postal_code": validated_data.pop("postal_code"),
             "location_type": "OPD",
+            "user": request.user,
         }
 
         # Create location

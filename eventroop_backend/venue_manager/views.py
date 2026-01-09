@@ -7,10 +7,13 @@ from django.shortcuts import get_object_or_404
 from .permissions import EntityAccessPermission,CanAssignUsers
 from .serializers import *
 from accounts.models import CustomUser
-from accounts.serializers import VenueMiniSerializer,ServiceMiniSerializer,ResourceMiniSerializer
+from accounts.serializers import (
+    VenueMiniSerializer,
+    ServiceMiniSerializer,
+    ResourceMiniSerializer
+)
 from .models import *
 from .validations import *
-from django.db.models import F,Q
 
 # --------------------------------------------------------
 # VENUE VIEWSET
@@ -63,7 +66,6 @@ class VenueViewSet(viewsets.ModelViewSet):
             "manager", "staff", "photos"
         ).filter(is_deleted=False)
 
-
         if user.is_owner:
             qs = qs.filter(owner=user)
         elif user.is_manager:
@@ -73,7 +75,7 @@ class VenueViewSet(viewsets.ModelViewSet):
         else:
             qs = Venue.objects.none()
 
-        # ✅ Default ordering for pagination
+        # Default ordering for pagination
         return qs.order_by("-created_at")
 
     # --------------------------------------------------------

@@ -105,8 +105,11 @@ class LocationViewSet(viewsets.ModelViewSet):
     queryset = Location.objects.all().order_by("city", "building_name")
     serializer_class = LocationSerializer
 
-    filterset_fields = ["location_type", "city", "state"]
+    filterset_fields = ["location_type","user__first_name","user__email","user__mobile_number", "city", "state"]
     search_fields = [
+        "user__first_name",
+        "user__email",
+        "user__mobile_number"
         "building_name",
         "address_line1",
         "locality",
