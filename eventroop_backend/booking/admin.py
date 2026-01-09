@@ -1,5 +1,56 @@
 from django.contrib import admin
-from .models import Patient
+from .models import Patient,Location
+
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "building_name",
+        "city",
+        "state",
+        "postal_code",
+        "location_type",
+    )
+
+    list_filter = (
+        "location_type",
+        "city",
+        "state",
+    )
+
+    search_fields = (
+        "building_name",
+        "address_line1",
+        "address_line2",
+        "locality",
+        "city",
+        "state",
+        "postal_code",
+    )
+
+    ordering = ("city", "building_name")
+
+    readonly_fields = ()
+
+    fieldsets = (
+        ("Location Type", {
+            "fields": ("location_type",)
+        }),
+        ("Building Information", {
+            "fields": ("building_name",)
+        }),
+        ("Address", {
+            "fields": (
+                "address_line1",
+                "address_line2",
+                "locality",
+                "city",
+                "state",
+                "postal_code",
+            )
+        }),
+    )
 
 @admin.register(Patient)
 class PatientAdmin(admin.ModelAdmin):

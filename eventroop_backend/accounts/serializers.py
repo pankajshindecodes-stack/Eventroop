@@ -1,24 +1,22 @@
 # serializers.py
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from django.shortcuts import get_object_or_404
-
-from .models import CustomUser, UserHierarchy, PricingModel, UserPlan
 from venue_manager.models import Venue,Service,Resource
+from .models import CustomUser, UserHierarchy, PricingModel, UserPlan
 
 # ---------------------- Entity mini Serializer ----------------------
 class VenueMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Venue
-        fields = ["id", "name", "city", "is_active"]
+        fields = ["id", "name", "is_active"]
 class ServiceMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
-        fields = ["id", "name", "city", "is_active"]
+        fields = ["id", "name", "is_active"]
 class ResourceMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
-        fields = ["id", "name", "city", "is_active"]
+        fields = ["id", "name", "is_active"]
 
 # ---------------------- User Profile Serializer ----------------------
 class BaseUserSerializer(serializers.ModelSerializer):

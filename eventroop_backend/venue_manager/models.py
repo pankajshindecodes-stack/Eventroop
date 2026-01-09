@@ -4,6 +4,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.fields import GenericRelation
 
 from accounts.models import CustomUser
+from booking.models import Location
 
 # ----------------------------- Photo for all -----------------------
 class Photos(models.Model):
@@ -53,8 +54,11 @@ class Venue(models.Model):
     # Venue Details
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    address = models.TextField()
-    city = models.CharField(max_length=200)
+    location = models.OneToOneField(
+        Location,
+        on_delete=models.CASCADE,
+        related_name="venue_location"
+    )
     contact = models.CharField(max_length=15, blank=True, null=True)
     website = models.URLField(max_length=500,blank=True,null=True,help_text="Official website ")
     social_links = models.JSONField(blank=True, null=True)

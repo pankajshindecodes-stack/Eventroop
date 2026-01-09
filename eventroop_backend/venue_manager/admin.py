@@ -25,26 +25,53 @@ class VenueAdmin(admin.ModelAdmin):
         "id",
         "name",
         "owner",
-        "city",
+        "get_city",
         "is_active",
         "is_deleted",
         "created_at",
     )
-    list_filter = ("is_active", "is_deleted", "city")
-    search_fields = ("name", "city", "address")
+
+    list_filter = (
+        "is_active",
+        "is_deleted",
+        "location__city",
+    )
+
+    search_fields = (
+        "name",
+        "location__city",
+        "location__address",
+    )
+
     ordering = ("-created_at",)
 
     readonly_fields = ("created_at", "updated_at")
 
     filter_horizontal = ("manager", "staff")
+
     inlines = [PhotosInline]
 
+    # --------------------------------------------------------
+    # DISPLAY LOCATION FIELDS
+    # --------------------------------------------------------
+    def get_city(self, obj):
+        return obj.location.city if obj.location else "-"
+    get_city.short_description = "City"
+    get_city.admin_order_field = "location__city"
+
+    def get_address(self, obj):
+        return obj.location.address if obj.location else "-"
+    get_address.short_description = "Address"
+
+    # --------------------------------------------------------
+    # FIELDSETS
+    # --------------------------------------------------------
     fieldsets = (
         ("Basic Information", {
             "fields": ("name", "description", "logo")
         }),
         ("Location", {
-            "fields": ("address", "city")
+            "fields": ("location",)   # one-to-one editable
         }),
         ("Ownership", {
             "fields": ("owner", "manager", "staff")
@@ -68,7 +95,6 @@ class VenueAdmin(admin.ModelAdmin):
             "fields": ("created_at", "updated_at")
         }),
     )
-
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
     list_display = (

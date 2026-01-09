@@ -10,16 +10,23 @@ from accounts.models import CustomUser
 from accounts.serializers import VenueMiniSerializer,ServiceMiniSerializer,ResourceMiniSerializer
 from .models import *
 from .validations import *
+from django.db.models import F,Q
 
 # --------------------------------------------------------
 # VENUE VIEWSET
 # --------------------------------------------------------
+
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
     permission_classes = [IsAuthenticated, EntityAccessPermission]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    
+    # --------------------------------------------------------
+    # FILTERS (use related location fields)
+    # --------------------------------------------------------
     filterset_fields = {
-        "city": ["iexact", "icontains"],
+        "location__city": ["iexact", "icontains"],
+        "location__state": ["iexact", "icontains"],
         "is_active": ["exact"],
         "is_deleted": ["exact"],
         "manager": ["exact"],
@@ -31,39 +38,52 @@ class VenueViewSet(viewsets.ModelViewSet):
         "external_decorators_allow": ["exact"],
         "external_caterers_allow": ["exact"],
     }
+
+    # --------------------------------------------------------
+    # SEARCH (use related location fields)
+    # --------------------------------------------------------
     search_fields = [
         "name",
         "description",
-        "address",
-        "city",
+        "location__building_name",
+        "location__address_line1",
+        "location__address_line2",
+        "location__locality",
+        "location__city",
+        "location__state",
     ]
 
+
     # --------------------------------------------------------
-    # FILTER VENUES BASED ON user_type
+    # QUERYSET BASED ON USER ROLE
     # --------------------------------------------------------
     def get_queryset(self):
         user = self.request.user
+        qs = Venue.objects.select_related("owner", "location").prefetch_related(
+            "manager", "staff", "photos"
+        ).filter(is_deleted=False)
+
 
         if user.is_owner:
-            return Venue.objects.filter(owner=user, is_deleted=False)
+            qs = qs.filter(owner=user)
+        elif user.is_manager:
+            qs = qs.filter(manager=user)
+        elif user.is_staff_user_type:
+            qs = qs.filter(staff=user)
+        else:
+            qs = Venue.objects.none()
 
-        if user.is_manager:
-            return Venue.objects.filter(manager=user, is_deleted=False)
-
-        if user.is_staff_user_type:
-            return Venue.objects.filter(staff=user, is_deleted=False)
-
-        return Venue.objects.none()
+        # ✅ Default ordering for pagination
+        return qs.order_by("-created_at")
 
     # --------------------------------------------------------
-    # CREATE WITH OWNER
+    # CREATE → OWNER ONLY
     # --------------------------------------------------------
-
     def perform_create(self, serializer):
         user = self.request.user
         if not user.is_owner:
             raise PermissionDenied("Only owners can create venues.")
-        serializer.save(owner=user,is_active=True)
+        serializer.save(owner=user, is_active=True)
 
     # --------------------------------------------------------
     # SOFT DELETE
@@ -73,7 +93,7 @@ class VenueViewSet(viewsets.ModelViewSet):
             instance.soft_delete()
         else:
             instance.delete()
-
+            
 # --------------------------------------------------------
 # SERVICE VIEWSET
 # --------------------------------------------------------
@@ -109,7 +129,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
         if user.is_manager:
             return Service.objects.filter(manager=user, is_deleted=False)
 
-        if user.is_staff_user_type: 
+        if user.is_vsre_staff: 
             return Service.objects.filter(staff=user, is_deleted=False)
 
         return Service.objects.none()

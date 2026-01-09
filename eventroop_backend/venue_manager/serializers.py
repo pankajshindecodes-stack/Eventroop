@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
 from .models import *
 from accounts.models import CustomUser
 
@@ -18,87 +19,125 @@ class UserMiniSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ["id", "first_name", "last_name", "email", "mobile_number", "user_type"]
 
+class LocationMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = [
+            "building_name",
+            "address_line1",
+            "address_line2",
+            "locality",
+            "city",
+            "state",
+            "postal_code",
+        ]
+
+
 # --------------------------------------------------------
 # VENUE SERIALIZER
 # --------------------------------------------------------
 class VenueSerializer(serializers.ModelSerializer):
     photos = PhotosSerializer(many=True, read_only=True)
-
     owner = UserMiniSerializer(read_only=True)
-
     manager = UserMiniSerializer(many=True, read_only=True)
-
     staff = UserMiniSerializer(many=True, read_only=True)
 
+    location = LocationMiniSerializer()
 
     class Meta:
         model = Venue
         fields = [
             "id", "owner", "manager", "staff",
-            "name", "description", "address","city",
-            "contact", "website", "social_links",
+            "name", "description","location",
             "capacity", "price_per_event", "rooms", "floors",
-            "parking_slots","external_decorators_allow", "external_caterers_allow",
-            "amenities", "seating_arrangement",
+            "parking_slots", "external_decorators_allow",
+            "external_caterers_allow", "amenities",
+            "seating_arrangement",
             "is_active", "is_deleted",
-            "created_at", "updated_at","photos","logo"
+            "created_at", "updated_at",
+            "photos", "logo"
         ]
         read_only_fields = ["is_deleted", "created_at", "updated_at"]
 
     # --------------------------------------------------------
-    # CREATE VENUE WITH PHOTOS
+    # CREATE
     # --------------------------------------------------------
+    @transaction.atomic
     def create(self, validated_data):
-        photos_data = self.context['request'].FILES.getlist('photos')
-        validated_data["logo"] = self.context["request"].FILES.get("logo")
+        request = self.context["request"]
 
-        venue = Venue.objects.create(**validated_data)
+        photos_data = request.FILES.getlist("photos")
+        logo = request.FILES.get("logo")
 
+        location_data = validated_data.pop("location")
+        location_data["location_type"] = "OPD"
+
+        # Create location
+        location = Location.objects.create(**location_data)
+
+        # Create venue
+        venue = Venue.objects.create(
+            **validated_data,
+            location=location,
+            logo=logo
+        )
+
+        # Save photos
         if photos_data:
             ct = ContentType.objects.get_for_model(Venue)
-
-            photo_objects = [
+            Photos.objects.bulk_create([
                 Photos(
-                        image=image,
-                        is_primary=False, # TODO: need to manage primary image
-                        content_type=ct,
-                        object_id=venue.id,
-                    )
+                    image=image,
+                    is_primary=False,
+                    content_type=ct,
+                    object_id=venue.id,
+                )
                 for image in photos_data
-            ]
-            # Bulk create → MUCH faster
-            Photos.objects.bulk_create(photo_objects)
+            ])
 
         return venue
 
     # --------------------------------------------------------
-    # UPDATE VENUE + UPDATE/REPLACE PHOTOS
+    # UPDATE
     # --------------------------------------------------------
+    @transaction.atomic
     def update(self, instance, validated_data):
-        photos_data = self.context['request'].FILES.getlist('photos')
-        validated_data["logo"] = self.context["request"].FILES.get("logo")
+        request = self.context["request"]
 
-        instance = super().update(instance, validated_data)
+        photos_data = request.FILES.getlist("photos")
+        logo = request.FILES.get("logo")
 
-        # Update photos
+        # Update location
+        location_data = validated_data.pop("location", None)
+        if location_data:
+            for attr, value in location_data.items():
+                setattr(instance.location, attr, value)
+            instance.location.save()
+
+        # Update venue fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if logo:
+            instance.logo = logo
+
+        instance.save()
+
+        # Add new photos (no delete)
         if photos_data:
             ct = ContentType.objects.get_for_model(Venue)
-            # Photos.objects.filter(content_type=ct, object_id=instance.id).delete()
-            photo_objects = [
+            Photos.objects.bulk_create([
                 Photos(
-                        image=image,
-                        is_primary=False, # TODO: need to create separate api to manage photos
-                        content_type=ct,
-                        object_id=instance.id,
-                    )
+                    image=image,
+                    is_primary=False,
+                    content_type=ct,
+                    object_id=instance.id,
+                )
                 for image in photos_data
-            ]
-            # Bulk create → MUCH faster
-            Photos.objects.bulk_create(photo_objects)
-            
+            ])
 
         return instance
-    
+
 # --------------------------------------------------------
 # SERVICE SERIALIZER
 # --------------------------------------------------------

@@ -1,23 +1,21 @@
 from rest_framework import serializers
-from venue_manager.models import Venue, Service
-from venue_manager.serializers import PhotosSerializer
-from .models import Patient
+from .models import *
 
-
-class VenueSerializer(serializers.ModelSerializer):
-    photos  = PhotosSerializer(many=True, read_only=True)
-
+class LocationSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Venue
-        fields = "__all__"
-        
-class ServiceSerializer(serializers.ModelSerializer):
-    photos  = PhotosSerializer(many=True, read_only=True)
+        model = Location
+        fields = [
+            "id",
+            "location_type",
+            "building_name",
+            "address_line1",
+            "address_line2",
+            "locality",
+            "city",
+            "state",
+            "postal_code",
+        ]
 
-    class Meta:
-        model = Service
-        fields = "__all__"
-        
 
 class PatientSerializer(serializers.ModelSerializer):
     name_registered_by = serializers.CharField(source="registered_by.get_full_name",read_only=True)
@@ -25,3 +23,5 @@ class PatientSerializer(serializers.ModelSerializer):
         model = Patient
         fields = '__all__'
         read_only_fields = ['id','name_registered_by', 'registered_by', 'registration_date', 'updated_at']
+
+

@@ -4,6 +4,47 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from accounts.models import CustomUser
 
+class Location(models.Model):
+    LOCATION_TYPE_CHOICES = [
+        ("OPD", "OPD"),
+        ("PARTNER", "Partner"),
+        ("CLIENT", "Client"),
+    ]
+
+    location_type = models.CharField(
+        max_length=20,
+        choices=LOCATION_TYPE_CHOICES
+    )
+    building_name = models.CharField(max_length=250)
+    address_line1 = models.CharField(max_length=250)
+    address_line2 = models.CharField(
+        max_length=250,
+        blank=True,
+        null=True
+    )
+    locality = models.CharField(max_length=250)
+    city = models.CharField(max_length=250)
+    state = models.CharField(max_length=250)
+    postal_code = models.CharField(max_length=20)
+
+    class Meta:
+        verbose_name_plural = "Locations"
+
+    def __str__(self):
+        return f"{self.building_name} ({self.city})"
+
+    def full_address(self):
+        parts = [
+            self.building_name,
+            self.address_line1,
+            self.address_line2,
+            self.locality,
+            self.city,
+            self.state,
+            self.postal_code,
+        ]
+        return ", ".join(filter(None, parts))
+
 class Patient(models.Model):
     """Model for storing patient registration and medical information"""
     

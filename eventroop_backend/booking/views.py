@@ -1,4 +1,5 @@
 from venue_manager.models import Venue,Service
+from venue_manager.serializers import VenueSerializer,ServiceSerializer
 from rest_framework import viewsets, permissions
 from .serializers import*
 from .models import Patient
@@ -21,7 +22,8 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Venue.objects.filter(is_deleted=False, is_active=True).order_by("id")
 
     filterset_fields = {
-        "city": ["iexact", "icontains"],
+        "location__city": ["iexact", "icontains"],
+        "location__state": ["iexact", "icontains"],
         "capacity": ["gte", "lte", "exact"],
         "price_per_event": ["gte", "lte"],
         "rooms": ["gte", "lte"],
@@ -33,9 +35,12 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = [
         "name",
         "description",
-        "address",
-        "city",
-        "contact",
+        "location__building_name",
+        "location__address_line1",
+        "location__address_line2",
+        "location__locality",
+        "location__city",
+        "location__state",
     ]
 
 class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
