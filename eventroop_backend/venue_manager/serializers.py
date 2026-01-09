@@ -29,7 +29,7 @@ class LocationMiniSerializer(serializers.ModelSerializer):
             "locality",
             "city",
             "state",
-            "postal_code",
+            "postal_code"
         ]
 
 
@@ -42,13 +42,34 @@ class VenueSerializer(serializers.ModelSerializer):
     manager = UserMiniSerializer(many=True, read_only=True)
     staff = UserMiniSerializer(many=True, read_only=True)
 
+    # Write-only flat fields (input)
+    building_name = serializers.CharField(write_only=True)
+    address_line1 = serializers.CharField(write_only=True)
+    address_line2 = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    locality = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    city = serializers.CharField(write_only=True)
+    state = serializers.CharField(write_only=True)
+    postal_code = serializers.CharField(write_only=True)
+
+    # Read-only nested output
     location = LocationMiniSerializer(read_only=True)
 
     class Meta:
         model = Venue
         fields = [
             "id", "owner", "manager", "staff",
-            "name", "description","location",
+            "name", "description",
+
+            "building_name",
+            "address_line1",
+            "address_line2",
+            "locality",
+            "city",
+            "state",
+            "postal_code",
+
+            "location",   # output only
+
             "capacity", "price_per_event", "rooms", "floors",
             "parking_slots", "external_decorators_allow",
             "external_caterers_allow", "amenities",
@@ -58,6 +79,7 @@ class VenueSerializer(serializers.ModelSerializer):
             "photos", "logo"
         ]
         read_only_fields = ["is_deleted", "created_at", "updated_at"]
+
 
     # --------------------------------------------------------
     # CREATE
@@ -69,8 +91,17 @@ class VenueSerializer(serializers.ModelSerializer):
         photos_data = request.FILES.getlist("photos")
         logo = request.FILES.get("logo")
 
-        location_data = validated_data.pop("location")
-        location_data["location_type"] = "OPD"
+        # Extract flat location fields
+        location_data = {
+            "building_name": validated_data.pop("building_name"),
+            "address_line1": validated_data.pop("address_line1"),
+            "address_line2": validated_data.pop("address_line2", ""),
+            "locality": validated_data.pop("locality", ""),
+            "city": validated_data.pop("city"),
+            "state": validated_data.pop("state"),
+            "postal_code": validated_data.pop("postal_code"),
+            "location_type": "OPD",
+        }
 
         # Create location
         location = Location.objects.create(**location_data)
@@ -107,12 +138,14 @@ class VenueSerializer(serializers.ModelSerializer):
         photos_data = request.FILES.getlist("photos")
         logo = request.FILES.get("logo")
 
-        # Update location
-        location_data = validated_data.pop("location", None)
-        if location_data:
-            for attr, value in location_data.items():
-                setattr(instance.location, attr, value)
-            instance.location.save()
+        # Update location fields
+        location_fields = ["building_name", "address_line1", "address_line2", "locality", "city", "state", "postal_code"]
+
+        for field in location_fields:
+            if field in validated_data:
+                setattr(instance.location, field, validated_data.pop(field))
+
+        instance.location.save()
 
         # Update venue fields
         for attr, value in validated_data.items():
@@ -123,7 +156,7 @@ class VenueSerializer(serializers.ModelSerializer):
 
         instance.save()
 
-        # Add new photos (no delete)
+        # Add new photos
         if photos_data:
             ct = ContentType.objects.get_for_model(Venue)
             Photos.objects.bulk_create([
@@ -137,6 +170,7 @@ class VenueSerializer(serializers.ModelSerializer):
             ])
 
         return instance
+
 
 # --------------------------------------------------------
 # SERVICE SERIALIZER
