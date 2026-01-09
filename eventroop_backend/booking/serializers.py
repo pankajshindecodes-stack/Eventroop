@@ -1,7 +1,12 @@
 from rest_framework import serializers
 from .models import *
+from rest_framework import serializers
+from .models import Location
+
 
 class LocationSerializer(serializers.ModelSerializer):
+    full_address = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Location
         fields = [
@@ -14,7 +19,11 @@ class LocationSerializer(serializers.ModelSerializer):
             "city",
             "state",
             "postal_code",
+            "full_address",
         ]
+
+    def get_full_address(self, obj):
+        return obj.full_address()
 
 
 class PatientSerializer(serializers.ModelSerializer):

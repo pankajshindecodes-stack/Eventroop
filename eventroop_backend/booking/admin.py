@@ -6,11 +6,11 @@ from .models import Patient,Location
 class LocationAdmin(admin.ModelAdmin):
     list_display = (
         "id",
-        "building_name",
-        "city",
-        "state",
-        "postal_code",
         "location_type",
+        "building_name",
+        'locality',
+        "city",
+        "postal_code",
     )
 
     list_filter = (

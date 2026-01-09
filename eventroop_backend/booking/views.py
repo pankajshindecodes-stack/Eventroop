@@ -15,10 +15,7 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = VenueSerializer
     permission_classes = [permissions.AllowAny]
     
-
-
     lookup_field = "pk"
-
     queryset = Venue.objects.filter(is_deleted=False, is_active=True).order_by("id")
 
     filterset_fields = {
@@ -103,3 +100,17 @@ class PatientViewSet(viewsets.ModelViewSet):
         Set registered_by = request.user automatically
         """
         serializer.save(registered_by=self.request.user)
+
+class LocationViewSet(viewsets.ModelViewSet):
+    queryset = Location.objects.all().order_by("city", "building_name")
+    serializer_class = LocationSerializer
+
+    filterset_fields = ["location_type", "city", "state"]
+    search_fields = [
+        "building_name",
+        "address_line1",
+        "locality",
+        "city",
+        "state",
+        "postal_code",
+    ]
