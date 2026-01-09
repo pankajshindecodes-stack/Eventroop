@@ -42,7 +42,7 @@ class VenueSerializer(serializers.ModelSerializer):
     manager = UserMiniSerializer(many=True, read_only=True)
     staff = UserMiniSerializer(many=True, read_only=True)
 
-    location = LocationMiniSerializer()
+    location = LocationMiniSerializer(read_only=True)
 
     class Meta:
         model = Venue
