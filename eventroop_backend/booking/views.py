@@ -1,7 +1,7 @@
 from venue_manager.models import Venue,Service
 from venue_manager.serializers import VenueSerializer,ServiceSerializer
 from rest_framework import viewsets, permissions
-from .serializers import*
+from .serializers import *
 from .models import Patient
 from .filters import EntityFilter
 from django.db.models import Q
@@ -102,7 +102,6 @@ class PatientViewSet(viewsets.ModelViewSet):
         serializer.save(registered_by=self.request.user)
 
 class LocationViewSet(viewsets.ModelViewSet):
-    queryset = Location.objects.all().order_by("city", "building_name")
     serializer_class = LocationSerializer
 
     filterset_fields = ["location_type","user__first_name","user__email","user__mobile_number", "city", "state"]
@@ -117,3 +116,20 @@ class LocationViewSet(viewsets.ModelViewSet):
         "state",
         "postal_code",
     ]
+    
+    def get_queryset(self):
+        user = self.request.user
+
+        # Admin → see all locations
+        if user.is_superuser:
+            qs = Location.objects.all()
+
+        # Owner → see locations of their staff / clients
+        elif getattr(user, "is_owner", False):
+            qs = Location.objects.filter(user__hierarchy__owner=user)
+
+        # Staff or Manager → see only locations related to them
+        else:
+            qs = Location.objects.filter(user=user)
+
+        return qs.order_by("-id")  # or any default ordering you prefer
