@@ -56,6 +56,7 @@ class Venue(models.Model):
     description = models.TextField(blank=True)
     location = models.OneToOneField(
         Location,
+        null=True,
         on_delete=models.CASCADE,
         related_name="venue_location"
     )
