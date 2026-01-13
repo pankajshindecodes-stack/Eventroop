@@ -24,7 +24,7 @@ class LocationSerializer(serializers.ModelSerializer):
             "postal_code",
             "full_address",
         ]
-
+        read_only_fields = ["user"]
     def get_full_address(self, obj):
         return obj.full_address()
     

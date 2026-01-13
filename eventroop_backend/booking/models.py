@@ -37,20 +37,7 @@ class Location(models.Model):
 
     class Meta:
         verbose_name_plural = "Locations"
-        # constraints = [
-        #     models.UniqueConstraint(
-        #         fields=[
-        #             "building_name",
-        #             "address_line1",
-        #             "address_line2",
-        #             "locality",
-        #             "city",
-        #             "state",
-        #             "postal_code",
-        #         ],
-        #         name="unique_full_address"
-        #     )
-        # ]
+
 
     def __str__(self):
         return f"{self.building_name} ({self.city})"

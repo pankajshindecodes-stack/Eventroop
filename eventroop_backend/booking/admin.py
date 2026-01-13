@@ -7,6 +7,7 @@ class LocationAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "location_type",
+        "user",
         "building_name",
         'locality',
         "city",

@@ -123,13 +123,15 @@ class LocationViewSet(viewsets.ModelViewSet):
         # Admin → see all locations
         if user.is_superuser:
             qs = Location.objects.all()
-
-        # Owner → see locations of their staff / clients
-        elif getattr(user, "is_owner", False):
-            qs = Location.objects.filter(user__hierarchy__owner=user)
-
-        # Staff or Manager → see only locations related to them
         else:
             qs = Location.objects.filter(user=user)
 
         return qs.order_by("-id")  # or any default ordering you prefer
+    
+    def perform_create(self, serializer):
+        # Automatically set the user to the requesting user
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        # Ensure user cannot be changed on update
+        serializer.save(user=self.request.user)
