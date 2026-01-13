@@ -7,7 +7,6 @@ from accounts.models import CustomUser
 class Location(models.Model):
     LOCATION_TYPE_CHOICES = [
         ("OPD", "OPD"),
-        ("PARTNER", "Partner"),
         ("CLIENT", "Client"),
     ]
     
