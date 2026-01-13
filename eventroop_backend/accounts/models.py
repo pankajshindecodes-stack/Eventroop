@@ -195,7 +195,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         return self.user_type in [self.UserTypes.VSRE_STAFF]
     
     def get_full_name(self):
-        return f"{self.first_name} {self.last_name} ({self.user_type})"
+        return f"{self.first_name} {self.last_name}"
    
     def can_manage_entity(self, entity):
         """Check if user has permission to manage specific entity"""

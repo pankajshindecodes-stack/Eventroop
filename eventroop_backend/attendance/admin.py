@@ -77,126 +77,15 @@ class UserFilter(admin.SimpleListFilter):
         return queryset
 
 
-# ------------------------------------------
+# =====================================================
 # Attendance Admin
-# ------------------------------------------
+# =====================================================
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
     list_display = (
         "user",
         "date",
-        "status_editable",
-        "formatted_duration",
-        "created_at",
-    )
-
-    list_filter = (
-        UserFilter,
         "status",
-        MonthFilter,
-        YearFilter,
-    )
-
-    search_fields = (
-        "user__first_name",
-        "user__last_name",
-        "user__email",
-    )
-
-    ordering = ("-date",)
-    date_hierarchy = "date"
-    readonly_fields = ("created_at", "updated_at")
-    autocomplete_fields = ("user",)
-    list_select_related = ("user", "status")
-
-    list_per_page = 30
-
-    # ------------------------------------------
-    # Display helpers
-    # ------------------------------------------
-    @admin.display(description="Status")
-    def status_editable(self, obj):
-        statuses = AttendanceStatus.objects.filter(is_active=True)
-        options = "".join(
-            [
-                f'<option value="{s.id}" {"selected" if obj.status.id == s.id else ""}>{s.label}</option>'
-                for s in statuses
-            ]
-        )
-        return format_html(
-            '<select data-id="{}" class="status-select" style="padding: 5px; border-radius: 4px;">{}</select>',
-            obj.id,
-            format_html(options),
-        )
-
-    status_editable.short_description = "Status"
-
-    @admin.display(description="Duration (hrs)")
-    def formatted_duration(self, obj):
-        if obj.duration:
-            hours = obj.duration.total_seconds() / 3600
-            return f"{hours:.2f}"
-        return "-"
-
-    # ------------------------------------------
-    # Bulk Actions
-    # ------------------------------------------
-    def changeform_add_ons(self):
-        return """
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const selects = document.querySelectorAll('.status-select');
-            selects.forEach(select => {
-                select.addEventListener('change', function() {
-                    const attendanceId = this.getAttribute('data-id');
-                    const statusId = this.value;
-                    const row = this.closest('tr');
-                    
-                    fetch(`/admin/attendance/attendance/${attendanceId}/`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
-                        },
-                        body: JSON.stringify({ status: statusId })
-                    })
-                    .then(response => {
-                        if (response.ok) {
-                            row.style.backgroundColor = '#e8f5e9';
-                            setTimeout(() => row.style.backgroundColor = '', 1000);
-                        } else {
-                            alert('Failed to update status');
-                            location.reload();
-                        }
-                    })
-                    .catch(err => {
-                        console.error('Error:', err);
-                        alert('Error updating status');
-                    });
-                });
-            });
-        });
-        </script>
-        """
-
-    class Media:
-        js = ('admin/js/status-update.js',)
-        css = {'all': ('admin/css/status-update.css',)}
-
-    # ------------------------------------------
-    # Permissions
-    # ------------------------------------------
-    def has_delete_permission(self, request, obj=None):
-        # Prevent accidental deletes
-        return request.user.is_superuser
-
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        return qs.select_related("user", "status")
-    list_display = (
-        "user",
-        "date",
-        "status_badge",
         "formatted_duration",
         "created_at",
     )
@@ -220,117 +109,85 @@ class AttendanceAdmin(admin.ModelAdmin):
     autocomplete_fields = ("user",)
     list_select_related = ("user", "status")
     list_per_page = 30
-    actions = (
-        "mark_present",
-        "mark_absent",
-    )
 
-    # ------------------------------------------
+    actions = ("mark_present", "mark_absent")
+
+    # ----------------------------
     # Display helpers
-    # ------------------------------------------
-    @admin.display(description="Status")
-    def status_badge(self, obj):
-        color_map = {
-            "P": "green",
-            "A": "red",
-            "H": "orange",
-            "L": "blue",
-        }
-        color = color_map.get(obj.status.code, "gray")
-        return format_html(
-            '<span style="color:white; background:{}; padding:4px 8px; border-radius:6px;">{}</span>',
-            color,
-            obj.status.label,
-        )
-
+    # ----------------------------
     @admin.display(description="Duration (hrs)")
     def formatted_duration(self, obj):
         if obj.duration:
-            hours = obj.duration.total_seconds() / 3600
-            return f"{hours:.2f}"
-        return "-"
+            return round(obj.duration.total_seconds() / 3600, 2)
+        return 0
 
-    # ------------------------------------------
+    # ----------------------------
     # Bulk Actions
-    # ------------------------------------------
+    # ----------------------------
     @admin.action(description="Mark selected as Present")
     def mark_present(self, request, queryset):
-        present_status = AttendanceStatus.objects.filter(
-            code="P", is_active=True
-        ).first()
-        if present_status:
-            queryset.update(status=present_status)
+        status = AttendanceStatus.objects.filter(code="P", is_active=True).first()
+        if status:
+            queryset.update(status=status)
 
     @admin.action(description="Mark selected as Absent")
     def mark_absent(self, request, queryset):
-        absent_status = AttendanceStatus.objects.filter(
-            code="A", is_active=True
-        ).first()
-        if absent_status:
-            queryset.update(status=absent_status)
+        status = AttendanceStatus.objects.filter(code="A", is_active=True).first()
+        if status:
+            queryset.update(status=status)
 
-    # ------------------------------------------
+    # ----------------------------
     # Permissions
-    # ------------------------------------------
+    # ----------------------------
     def has_delete_permission(self, request, obj=None):
-        # Prevent accidental deletes
         return request.user.is_superuser
 
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        return qs.select_related("user", "status")
 
-
+# =====================================================
+# Attendance Report Admin
+# =====================================================
 @admin.register(AttendanceReport)
 class AttendanceReportAdmin(admin.ModelAdmin):
-    # Fields to display in the list view
     list_display = (
-        'user', 
-        'start_date', 
-        'end_date', 
-        'total_payable_days', 
-        'total_payable_hours', 
+        "user",
+        "start_date",
+        "end_date",
+        "total_payable_days",
+        "total_payable_hours",
     )
 
-    # Fields to filter in the sidebar
     list_filter = (
-        'start_date',
-        'end_date',
-        'created_at',
-        'updated_at',
+        "start_date",
+        "end_date",
+        "created_at",
     )
 
-    # Fields searchable via search bar
     search_fields = (
-        'user__first_name', 
-        'user__last_name', 
-        'user__email'
+        "user__first_name",
+        "user__last_name",
+        "user__email",
     )
 
-    # Default ordering
-    ordering = ('-start_date', '-end_date')
+    ordering = ("-start_date",)
+    readonly_fields = ("created_at", "updated_at")
 
-    # Make some fields read-only
-    readonly_fields = ('created_at', 'updated_at')
-
-    # Optional: group fields into sections
     fieldsets = (
-        ('User & Period', {
-            'fields': ('user', 'start_date', 'end_date')
+        ("User & Period", {
+            "fields": ("user", "start_date", "end_date")
         }),
-        ('Attendance Data', {
-            'fields': (
-                'present_days', 
-                'absent_days', 
-                'half_day_count', 
-                'paid_leave_days',
-                'weekly_Offs',
-                'unpaid_leaves',
-                'total_payable_days',
-                'total_payable_hours',
+        ("Attendance Summary", {
+            "fields": (
+                "present_days",
+                "absent_days",
+                "half_day_count",
+                "paid_leave_days",
+                "weekly_Offs",
+                "unpaid_leaves",
+                "total_payable_days",
+                "total_payable_hours",
             )
         }),
-        ('Metadata', {
-            'fields': ('created_at', 'updated_at')
+        ("Metadata", {
+            "fields": ("created_at", "updated_at")
         }),
     )
