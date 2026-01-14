@@ -1,10 +1,13 @@
 from venue_manager.models import Venue,Service
 from venue_manager.serializers import VenueSerializer,ServiceSerializer
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions,status
 from .serializers import *
-from .models import Patient
+from .models import Patient,Package
 from .filters import EntityFilter
 from django.db.models import Q
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 
 class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -135,3 +138,87 @@ class LocationViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # Ensure user cannot be changed on update
         serializer.save(user=self.request.user)
+
+class PackageViewSet(viewsets.ModelViewSet):
+    queryset = Package.objects.all()
+    serializer_class = PackageSerializer
+    filterset_fields = ['package_type', 'is_active', 'owner', 'content_type__model']
+    search_fields = ['name', 'description']
+    ordering_fields = ['created_at', 'price', 'name']
+    ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PackageListSerializer
+        return PackageSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        # Owners can only see their own packages, staff can see all
+        if user.is_vsre_staff:
+            return Package.objects.filter(owner=user.hierarchy.owner)
+        return Package.objects.filter(owner=user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+    def perform_update(self, serializer):
+        if not self.request.user.is_owner:
+            return Response(
+                {'detail': 'You do not have permission to update this package.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not self.request.user.is_owner:
+            return Response(
+                {'detail': 'You do not have permission to delete this package.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        instance.delete()
+
+    @action(detail=False, methods=['get'])
+    def by_type(self, request):
+        """Filter packages by type"""
+        pkg_type = request.query_params.get('type')
+        if not pkg_type:
+            return Response(
+                {'error': 'type parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        packages = self.get_queryset().filter(package_type=pkg_type)
+        serializer = self.get_serializer(packages, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def by_belongs_to(self, request):
+        """
+        Example:
+        /booking/packages/by_belongs_to/?content_type=venue&object_id=3
+        """
+        content_type_name = request.query_params.get('content_type')
+        object_id = request.query_params.get('object_id')
+
+        if not content_type_name or not object_id:
+            return Response(
+                {'error': 'content_type and object_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Resolve model name → ContentType row
+            content_type = ContentType.objects.get(model=content_type_name.lower())
+        except ContentType.DoesNotExist:
+            return Response(
+                {'error': f'Invalid content_type: {content_type_name}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        packages = self.get_queryset().filter(
+            content_type=content_type,
+            object_id=object_id
+        )
+
+        serializer = self.get_serializer(packages, many=True)
+        return Response(serializer.data)
