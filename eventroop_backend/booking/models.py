@@ -3,6 +3,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator, RegexVa
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from accounts.models import CustomUser
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 
 class Location(models.Model):
     LOCATION_TYPE_CHOICES = [
@@ -53,6 +55,33 @@ class Location(models.Model):
             self.postal_code,
         ]
         return ", ".join(filter(None, parts))
+
+class Package(models.Model):
+    PKG_TYPE_CHOICES = [
+        ('IN_HOUSE', 'In House'),
+        ('OPD', 'OPD'),
+        ('CLIENT_SIDE', 'Client Side'),
+    ]
+    
+    owner = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='packages',limit_choices_to={"user_type":"VSRE_OWNER"})
+
+    # Polymorphic relation
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True,blank=True)
+    object_id = models.PositiveIntegerField(null=True,blank=True)
+    belongs_to = GenericForeignKey('content_type', 'object_id')
+    # belongs_to → Venue | Service | Resource
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    package_type = models.CharField(max_length=20, choices=PKG_TYPE_CHOICES)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.package_type})"
 
 class Patient(models.Model):
     """Model for storing patient registration and medical information"""

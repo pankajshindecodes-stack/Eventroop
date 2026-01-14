@@ -4,7 +4,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.fields import GenericRelation
 
 from accounts.models import CustomUser
-from booking.models import Location
+from booking.models import Location,Package
 
 # ----------------------------- Photo for all -----------------------
 class Photos(models.Model):
@@ -29,6 +29,7 @@ class Venue(models.Model):
     # User Relationships
     photos = GenericRelation(Photos, related_query_name="venue_photos")
     logo = models.ImageField(upload_to="logo_image/",null=True,blank=True)
+    
 
     owner = models.ForeignKey(
         CustomUser,
@@ -69,7 +70,8 @@ class Venue(models.Model):
     price_per_event = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     rooms = models.PositiveSmallIntegerField(default=0)
     floors = models.PositiveSmallIntegerField(default=0)
-
+    # Packages
+    packages = GenericRelation(Package, related_query_name='venue_packages')
     # Parking
     parking_slots = models.JSONField(default=dict, blank=True, null=True)
 
@@ -139,6 +141,8 @@ class Service(models.Model):
 
     contact = models.CharField(max_length=15,blank=True,null=True)
     website = models.URLField(max_length=500,blank=True,null=True)
+    # Packages
+    packages = GenericRelation(Package, related_query_name='service_packages')
 
     tags = models.JSONField(default=list)
     quick_info = models.JSONField(default=dict) 

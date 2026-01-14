@@ -120,49 +120,6 @@ def update_attendance_report_on_save(sender, instance, created, **kwargs):
     clear_cache(user.id)
 
 
-@receiver(post_delete, sender=Attendance)
-def update_attendance_report_on_delete(sender, instance, **kwargs):
-    """When attendance is deleted, recalculate and update the report and salary."""
-    user = instance.user
-    attendance_date = instance.date
-    
-    # Recalculate attendance report after deletion
-    report = update_attendance_report(user, attendance_date)
-    
-    if report:
-        # Update corresponding salary report
-        update_salary_report(
-            user=user,
-            period_start=report["start_date"],
-            period_end=report["end_date"],
-            period_type=report["period_type"]
-        )
-    else:
-        # If no report exists after deletion, clean up orphaned salary reports
-        try:
-            SalaryReport.objects.filter(user=user).delete()
-        except Exception as e:
-            print(f"Error cleaning up salary reports: {e}")
-    
-    # Clear cache after deletion
-    clear_cache(user.id)
-
-
-@receiver(post_delete, sender=AttendanceReport)
-def delete_salary_report_on_attendance_report_delete(sender, instance, **kwargs):
-    """When AttendanceReport is deleted, also delete corresponding SalaryReport."""
-    try:
-        SalaryReport.objects.filter(
-            user=instance.user,
-            start_date=instance.start_date,
-            end_date=instance.end_date
-        ).delete()
-        
-        clear_cache(instance.user.id)
-    except Exception as e:
-        print(f"Error deleting salary report: {e}")
-
-
 @receiver(post_save, sender=AttendanceReport)
 def create_or_update_salary_report_on_attendance(sender, instance, created, **kwargs):
     """Auto-create or update SalaryReport when AttendanceReport changes."""
