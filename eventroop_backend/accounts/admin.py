@@ -5,7 +5,6 @@ from django.utils import timezone
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.core.exceptions import ValidationError
-from django.http import HttpRequest
 from django.contrib import messages
 
 from .models import CustomUser, UserHierarchy, PricingModel, UserPlan
@@ -135,7 +134,7 @@ class UserPlanInline(admin.TabularInline):
 
     def days_remaining(self, obj):
         if obj.end_date and obj.is_active:
-            today = timezone.now().date()
+            today = timezone.localtime().date()
             remaining = (obj.end_date - today).days
             return max(0, remaining)
         return 0
@@ -505,7 +504,7 @@ class UserPlanAdmin(admin.ModelAdmin):
 
     def days_remaining(self, obj):
         if obj.end_date and obj.is_active:
-            today = timezone.now().date()
+            today = timezone.localtime().date()
             remaining = (obj.end_date - today).days
             return max(0, remaining)
         return 0
@@ -528,7 +527,7 @@ class UserPlanAdmin(admin.ModelAdmin):
         for user_plan in queryset:
             if user_plan.is_active:
                 user_plan.is_active = False
-                user_plan.end_date = timezone.now().date()
+                user_plan.end_date = timezone.localtime().date()
                 user_plan.save()
                 count += 1
         
@@ -541,7 +540,7 @@ class UserPlanAdmin(admin.ModelAdmin):
 
     def activate_plans(self, request, queryset):
         count = 0
-        today = timezone.now().date()
+        today = timezone.localtime().date()
         
         for user_plan in queryset:
             if not user_plan.is_active:

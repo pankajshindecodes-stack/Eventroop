@@ -194,6 +194,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def is_vsre_staff(self):
         return self.user_type in [self.UserTypes.VSRE_STAFF]
     
+    @property
+    def is_customer(self):
+        return self.user_type in [self.UserTypes.CUSTOMER]
+    
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}"
    
@@ -336,7 +340,7 @@ class UserPlan(models.Model):
 
         if self.plan.plan_type == "SUBSCRIPTION":
             self.end_date = self.start_date + timedelta(days=self.plan.duration_days)
-            self.is_active = self.start_date <= timezone.now() <= self.end_date
+            self.is_active = self.start_date <= timezone.localtime() <= self.end_date
         else:
             self.end_date = None
             self.is_active = True

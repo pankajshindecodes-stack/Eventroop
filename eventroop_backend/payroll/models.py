@@ -283,7 +283,7 @@ class SalaryTransaction(models.Model):
 
         # Set processed time on final states
         if self.status in {"SUCCESS", "FAILED", "CANCELLED"} and not self.processed_at:
-            self.processed_at = timezone.now()
+            self.processed_at = timezone.localtime()
         super().save(*args, **kwargs)
 
     # -------------------- Helpers --------------------
