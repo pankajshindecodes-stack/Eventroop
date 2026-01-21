@@ -333,7 +333,7 @@ class InvoiceTransactionAdmin(admin.ModelAdmin):
     search_fields = (
         "id",
         "booking__id",
-        "reference_id",
+        "invoice_id",
         "remarks",
         "notes",
     )
@@ -381,7 +381,7 @@ class InvoiceTransactionAdmin(admin.ModelAdmin):
                     "payment_method",
                     "paid_amount",
                     "remain_amount",
-                    "reference_id",
+                    "invoice_id",
                     "status",
                 )
             },

@@ -107,7 +107,7 @@ class Migration(migrations.Migration):
                 ('due_amount', models.DecimalField(decimal_places=2, default=Decimal('0.00'), max_digits=10)),
                 ('transaction_type', models.CharField(choices=[('PAYMENT', 'Payment'), ('REFUND', 'Refund'), ('ADJUSTMENT', 'Adjustment')], db_index=True, default='PAYMENT', max_length=15)),
                 ('payment_method', models.CharField(choices=[('CASH', 'Cash'), ('UPI', 'UPI'), ('CARD', 'Card'), ('NET_BANKING', 'Net Banking'), ('CHEQUE', 'Cheque')], default='CASH', max_length=20)),
-                ('reference_id', models.CharField(blank=True, help_text='Payment gateway ID, cheque number, etc.', max_length=100, null=True)),
+                ('invoice_id', models.CharField(blank=True, help_text='Payment gateway ID, cheque number, etc.', max_length=100, null=True)),
                 ('remarks', models.TextField(blank=True)),
                 ('status', models.CharField(choices=[('PENDING', 'Pending'), ('PARTIALLY_PAID', 'Partially Paid'), ('PAID', 'Paid'), ('CANCELLED', 'Cancelled')], db_index=True, default='PENDING', max_length=20)),
                 ('notes', models.TextField(blank=True)),
@@ -120,7 +120,7 @@ class Migration(migrations.Migration):
             ],
             options={
                 'ordering': ['-created_at'],
-                'indexes': [models.Index(fields=['booking', 'invoice_for'], name='booking_inv_booking_d43f52_idx'), models.Index(fields=['status', '-created_at'], name='booking_inv_status_f3b20f_idx'), models.Index(fields=['transaction_type', 'created_at'], name='booking_inv_transac_7b8ce6_idx'), models.Index(fields=['reference_id'], name='booking_inv_referen_55cb67_idx')],
+                'indexes': [models.Index(fields=['booking', 'invoice_for'], name='booking_inv_booking_d43f52_idx'), models.Index(fields=['status', '-created_at'], name='booking_inv_status_f3b20f_idx'), models.Index(fields=['transaction_type', 'created_at'], name='booking_inv_transac_7b8ce6_idx'), models.Index(fields=['invoice_id'], name='booking_inv_referen_55cb67_idx')],
             },
         ),
         migrations.AddIndex(

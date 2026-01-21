@@ -567,7 +567,7 @@ class InvoiceTransaction(models.Model):
         default=PaymentMethod.CASH,
     )
 
-    reference_id = models.CharField(
+    invoice_id = models.CharField(
         max_length=100,
         blank=True,
         null=True,
@@ -601,7 +601,7 @@ class InvoiceTransaction(models.Model):
             models.Index(fields=["booking", "invoice_for"]),
             models.Index(fields=["status", "-created_at"]),
             models.Index(fields=["transaction_type", "created_at"]),
-            models.Index(fields=["reference_id"]),
+            models.Index(fields=["invoice_id"]),
         ]
 
     # --------------------------------------------------
