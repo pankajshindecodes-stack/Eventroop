@@ -610,65 +610,45 @@ class InvoiceTransaction(models.Model):
 
     def calculate_amounts(self):
         """
-        Calculate total_bill_amount based on invoice scope
+        Calculate total_bill_amount safely
         """
-
         total = Decimal("0.00")
 
         if self.invoice_for == self.InvoiceFor.VENUE and self.booking:
-            total = (self.booking.final_amount or Decimal("0.00")) + self.tax
+            total = self.booking.final_amount or Decimal("0.00")
 
         elif self.invoice_for == self.InvoiceFor.SERVICE:
-            total = (
-                self.service_bookings.aggregate(
-                    total=models.Sum("service_total_price")
-                )["total"]
-                or Decimal("0.00")
-            )
+            # M2M requires PK
+            if self.pk:
+                total = (
+                    self.service_bookings.aggregate(
+                        total=models.Sum("service_total_price")
+                    )["total"] or Decimal("0.00")
+                )
+
+        total += self.tax or Decimal("0.00")
         self.total_bill_amount = total
-        self.remain_amount = max(
-            Decimal("0.00"),
-            self.total_bill_amount - self.paid_amount,
-        )
 
     def update_payment_status(self):
         """
         Handles partial payments correctly
         """
 
-        self.calculate_amounts()
-
-        # Sum ALL payments except current instance (important!)
-        previous_payments = (
-            InvoiceTransaction.objects.filter(
-                booking=self.booking,
-                invoice_for=self.invoice_for,
-                transaction_type=self.PaymentType.PAYMENT,
-            )
-            .exclude(pk=self.pk)
-            .aggregate(total=models.Sum("paid_amount"))["total"]
-            or Decimal("0.00")
+        payments = InvoiceTransaction.objects.filter(
+            booking=self.booking,
+            invoice_for=self.invoice_for,
+            transaction_type=self.PaymentType.PAYMENT,
         )
 
-        refunds = (
-            InvoiceTransaction.objects.filter(
-                booking=self.booking,
-                invoice_for=self.invoice_for,
-                transaction_type=self.PaymentType.REFUND,
-            )
-            .exclude(pk=self.pk)
-            .aggregate(total=models.Sum("paid_amount"))["total"]
-            or Decimal("0.00")
-        )
-
-        total_paid = previous_payments + self.paid_amount - refunds
+        total_paid = payments.aggregate(
+            total=models.Sum("paid_amount")
+        )["total"] or Decimal("0.00")
 
         self.remain_amount = max(
             Decimal("0.00"),
             self.total_bill_amount - total_paid
         )
 
-        # Status
         if self.status == self.PaymentStatus.CANCELLED:
             return
 
@@ -679,15 +659,58 @@ class InvoiceTransaction(models.Model):
         else:
             self.status = self.PaymentStatus.PENDING
 
+    def generate_reference_id(self):
+        """
+        Generates unique, readable reference_id
+        """
+
+        prefix = "#INV"
+        if self.transaction_type == self.PaymentType.REFUND:
+            prefix = "#REF"
+        elif self.transaction_type == self.PaymentType.ADJUSTMENT:
+            prefix = "#ADJ"
+
+        date_part = int(timezone.now().timestamp())
+
+        booking_part = f"{self.booking_id}" if self.booking_id else "0"
+
+        # Count previous transactions for same booking + invoice scope
+        sequence = (
+            InvoiceTransaction.objects.filter(
+                booking=self.booking,
+                invoice_for=self.invoice_for,
+            )
+            .exclude(pk=self.pk)
+            .count()
+            + 1
+        )
+
+        return (
+            f"{prefix}"
+            f"{date_part}"
+            f"{booking_part}"
+            f"{sequence:04d}"
+        )
+
     def is_overdue(self):
         return (
             self.due_date
             and self.due_date < timezone.now().date()
             and self.status != self.PaymentStatus.PAID
         )
-
+    
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+
+        # First save → get PK
+        super().save(*args, **kwargs)
+
+        # Now M2M can be accessed
         self.calculate_amounts()
+
+        # Generate invoice ID once
+        if is_new and not self.invoice_id:
+            self.invoice_id = self.generate_reference_id()
 
         if self.transaction_type in {
             self.PaymentType.PAYMENT,
@@ -695,7 +718,13 @@ class InvoiceTransaction(models.Model):
         }:
             self.update_payment_status()
 
-        super().save(*args, **kwargs)
+        super().save(update_fields=[
+            "total_bill_amount",
+            "remain_amount",
+            "status",
+            "invoice_id",
+        ])
+
 
     def __str__(self):
         invoice_scope = f"[{self.get_invoice_for_display()}]"

@@ -30,14 +30,12 @@ class LocationSerializer(serializers.ModelSerializer):
             return obj.user.get_full_name()
         return None
 
-
 class PatientSerializer(serializers.ModelSerializer):
     name_registered_by = serializers.CharField(source="registered_by.get_full_name",read_only=True)
     class Meta:
         model = Patient
         fields = '__all__'
         read_only_fields = ['id','name_registered_by', 'registered_by', 'registration_date', 'updated_at']
-
 
 class PackageSerializer(serializers.ModelSerializer):
     belongs_to_type = serializers.SerializerMethodField()
@@ -215,7 +213,6 @@ class BookingCreateUpdateSerializer(serializers.ModelSerializer):
                 'venue': "Venue is not available for the selected time period."
             })
 
-
 class BookingServiceSerializer(serializers.ModelSerializer):
     service_name = serializers.CharField(source='service.name', read_only=True)
     
@@ -245,157 +242,96 @@ class BookingServiceSerializer(serializers.ModelSerializer):
         return data
 
 
+class InvoiceTransactionSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(
+        source="get_status_display", read_only=True
+    )
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display", read_only=True
+    )
+    transaction_type_display = serializers.CharField(
+        source="get_transaction_type_display", read_only=True
+    )
+    invoice_for_display = serializers.CharField(
+        source="get_invoice_for_display", read_only=True
+    )
+    is_overdue = serializers.SerializerMethodField()
 
-# class InvoiceSerializer(serializers.ModelSerializer):
-#     """Basic serializer for InvoiceTransaction model"""
-    
-#     class Meta:
-#         model = InvoiceTransaction
-#         fields = [
-#             'id', 'invoice_type', 'invoice_number', 'amount',
-#             'discount_amount', 'total_amount', 'amount_paid',
-#             'amount_due', 'payment_status', 'payment_method',
-#             'transaction_id', 'invoice_date', 'due_date',
-#             'paid_date', 'notes', 'is_sent', 'sent_date',
-#             'created_at', 'updated_at', 'booking', 'booking_service'
-#         ]
-#         read_only_fields = [
-#             'id', 'invoice_date', 'created_at', 'updated_at',
-#             'amount', 'total_amount', 'amount_due', 'amount_paid',
-#             'payment_status', 'paid_date', 'invoice_number'
-#         ]
+    class Meta:
+        model = InvoiceTransaction
+        fields = [
+            "id",
+            "booking",
+            "invoice_for",
+            "invoice_for_display",
+            "service_bookings",
+            "tax",
+            "total_bill_amount",
+            "paid_amount",
+            "remain_amount",
+            "transaction_type",
+            "transaction_type_display",
+            "payment_method",
+            "payment_method_display",
+            "invoice_id",
+            "remarks",
+            "status",
+            "status_display",
+            "notes",
+            "due_date",
+            "created_by",
+            "created_at",
+            "updated_at",
+            "is_overdue",
+        ]
+        read_only_fields = [
+            "id",
+            "invoice_id",
+            "remain_amount",
+            "total_bill_amount",
+            "created_at",
+            "updated_at",
+        ]
 
-# class InvoiceCreateSerializer(serializers.ModelSerializer):
-#     """Serializer for creating new invoices"""
-    
-#     booking_id = serializers.IntegerField(required=False, allow_null=True)
-#     booking_service_id = serializers.IntegerField(required=False, allow_null=True)
-    
-#     class Meta:
-#         model = InvoiceTransaction
-#         fields = [
-#             'invoice_type', 'booking_id', 'booking_service_id',
-#             'discount_amount', 'due_date', 'payment_method',
-#             'notes'
-#         ]
-    
-#     def validate(self, data):
-#         """Validate invoice source based on type"""
-#         invoice_type = data.get('invoice_type')
-#         booking_id = data.get('booking_id')
-#         booking_service_id = data.get('booking_service_id')
-        
-#         if invoice_type == InvoiceTransaction.InvoiceType.SERVICE:
-#             if not booking_service_id:
-#                 raise serializers.ValidationError(
-#                     "booking_service_id is required for SERVICE invoices"
-#                 )
-#             if booking_id:
-#                 raise serializers.ValidationError(
-#                     "SERVICE invoices cannot have booking_id"
-#                 )
-        
-#         elif invoice_type == InvoiceTransaction.InvoiceType.VENUE:
-#             if not booking_id:
-#                 raise serializers.ValidationError(
-#                     "booking_id is required for VENUE invoices"
-#                 )
-#             if booking_service_id:
-#                 raise serializers.ValidationError(
-#                     "VENUE invoices cannot have booking_service_id"
-#                 )
-        
-#         elif invoice_type == InvoiceTransaction.InvoiceType.VENUE_SERVICE:
-#             if not booking_id:
-#                 raise serializers.ValidationError(
-#                     "booking_id is required for VENUE_SERVICE invoices"
-#                 )
-#             if booking_service_id:
-#                 raise serializers.ValidationError(
-#                     "VENUE_SERVICE invoices cannot have booking_service_id"
-#                 )
-        
-#         return data
-    
-#     def create(self, validated_data):
-#         booking_id = validated_data.pop('booking_id', None)
-#         booking_service_id = validated_data.pop('booking_service_id', None)
-        
-#         if booking_id:
-#             validated_data['booking_id'] = booking_id
-#         if booking_service_id:
-#             validated_data['booking_service_id'] = booking_service_id
-        
-#         # Generate invoice number (implement your own logic)
-#         invoice = InvoiceTransaction.objects.create(**validated_data)
-#         return invoice
+    def get_is_overdue(self, obj):
+        return obj.is_overdue()
 
-# class InvoiceDetailSerializer(serializers.ModelSerializer):
-#     """Detailed serializer with related booking/service info"""
-    
-#     booking_details = serializers.SerializerMethodField()
-#     booking_service_details = serializers.SerializerMethodField()
-    
-#     class Meta:
-#         model = InvoiceTransaction
-#         fields = '__all__'
-#         read_only_fields = [
-#             'id', 'invoice_date', 'created_at', 'updated_at',
-#             'amount', 'total_amount', 'amount_due', 'amount_paid',
-#             'payment_status', 'paid_date', 'invoice_number'
-#         ]
-    
-#     def get_booking_details(self, obj):
-#         if obj.booking:
-#             return {
-#                 'id': obj.booking.id,
-#                 'booking_reference': getattr(obj.booking, 'booking_reference', None),
-#                 'venue_cost': str(getattr(obj.booking, 'venue_cost', 0)),
-#                 'final_amount': str(getattr(obj.booking, 'final_amount', 0))
-#             }
-#         return None
-    
-#     def get_booking_service_details(self, obj):
-#         if obj.booking_service:
-#             return {
-#                 'id': obj.booking_service.id,
-#                 'service_total_price': str(getattr(obj.booking_service, 'service_total_price', 0))
-#             }
-#         return None
+class CreatePaymentSerializer(serializers.Serializer):
+    booking_id = serializers.IntegerField(required=False, allow_null=True)
+    invoice_for = serializers.ChoiceField(
+        choices=InvoiceTransaction.InvoiceFor.choices
+    )
+    paid_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.01")
+    )
+    payment_method = serializers.ChoiceField(
+        choices=InvoiceTransaction.PaymentMethod.choices
+    )
+    transaction_type = serializers.ChoiceField(
+        choices=[
+            InvoiceTransaction.PaymentType.PAYMENT,
+            InvoiceTransaction.PaymentType.REFUND,
+        ],
+        default=InvoiceTransaction.PaymentType.PAYMENT,
+    )
+    service_bookings = serializers.PrimaryKeyRelatedField(
+        queryset=BookingService.objects.all(),
+        many=True,
+        required=False,
+    )
+    remarks = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    due_date = serializers.DateField(required=False, allow_null=True)
 
-# class InvoicePaymentSerializer(serializers.Serializer):
-#     """Serializer for recording payments"""
-    
-#     amount = serializers.DecimalField(
-#         max_digits=10,
-#         decimal_places=2,
-#         min_value=Decimal('0.01')
-#     )
-#     payment_method = serializers.ChoiceField(
-#         choices=InvoiceTransaction.PaymentMethod.choices
-#     )
-#     transaction_id = serializers.CharField(
-#         max_length=100,
-#         required=False,
-#         allow_blank=True
-#     )
-    
-#     def validate_amount(self, value):
-#         if value <= 0:
-#             raise serializers.ValidationError("Amount must be positive.")
-#         return value
-
-# class InvoiceUpdateSerializer(serializers.ModelSerializer):
-#     """Serializer for updating invoices"""
-    
-#     class Meta:
-#         model = InvoiceTransaction
-#         fields = [
-#             'discount_amount', 'due_date', 'notes', 'is_sent'
-#         ]
-    
-#     def validate_discount_amount(self, value):
-#         if value < 0:
-#             raise serializers.ValidationError("Discount cannot be negative.")
-#         return value
+class InvoiceSummarySerializer(serializers.Serializer):
+    total_invoices = serializers.IntegerField()
+    total_bill_amount = serializers.DecimalField(
+        max_digits=12, decimal_places=2
+    )
+    total_paid = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_pending = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_refunded = serializers.DecimalField(max_digits=12, decimal_places=2)
+    overdue_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    by_status = serializers.DictField()
+    by_payment_method = serializers.DictField()
 

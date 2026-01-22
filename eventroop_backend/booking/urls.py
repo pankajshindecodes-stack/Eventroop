@@ -10,5 +10,5 @@ router.register(r'location', LocationViewSet, basename='location')
 router.register(r'packages', PackageViewSet, basename='package')
 router.register(r'bookings', BookingViewSet, basename='booking')
 router.register(r'booking-services', BookingServiceViewSet, basename='booking-service')
-# router.register(r'invoices', InvoiceViewSet, basename='invoice')
+router.register(r'invoices', InvoiceTransactionViewSet, basename='invoice')
 urlpatterns = router.urls
