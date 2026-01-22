@@ -22,7 +22,7 @@ def create_invoice_on_booking(sender, instance, created, **kwargs):
     with transaction.atomic():
         if booking.venue:
             # Create single invoice for venue with all services
-            venue_amount = booking.venue_amount  # from booking calculation
+            venue_cost = booking.venue_cost  # from booking calculation
             all_services = booking.booking_services.all()
 
             services_amount = sum(
@@ -32,11 +32,8 @@ def create_invoice_on_booking(sender, instance, created, **kwargs):
             invoice = InvoiceTransaction.objects.create(
                 booking=booking,
                 invoice_for=InvoiceTransaction.InvoiceFor.VENUE,
-                subtotal=venue_amount + services_amount,
-                discount=booking.discount or Decimal("0.00"),
-                tax=booking.tax or Decimal("0.00"),
-                total_amount=0,  # calculated in save()
-                created_by=booking.created_by
+                total_bill_amount=((venue_cost + services_amount) - booking.discount),
+                created_by=booking.user
             )
             invoice.service_bookings.set(all_services)
             invoices.append(invoice)
@@ -53,7 +50,7 @@ def create_invoice_on_booking(sender, instance, created, **kwargs):
                     discount=service_booking.discount or Decimal("0.00"),
                     tax=service_booking.tax or Decimal("0.00"),
                     total_amount=0,  # calculated in save()
-                    created_by=booking.created_by
+                    created_by=booking.user
                 )
                 invoice.service_bookings.add(service_booking)
                 invoices.append(invoice)
