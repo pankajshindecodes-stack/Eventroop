@@ -198,7 +198,7 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
             existing_transaction.payment_method = serializer.validated_data['payment_method']
             existing_transaction.payment_reference = serializer.validated_data.get('payment_reference', '')
             existing_transaction.note = serializer.validated_data.get('note', '')
-            existing_transaction.processed_at = timezone.now()
+            existing_transaction.processed_at = timezone.localtime()
             existing_transaction.save()
         else:
             SalaryTransaction.objects.create(
@@ -207,7 +207,7 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
                 payment_method=serializer.validated_data['payment_method'],
                 payment_reference=serializer.validated_data.get('payment_reference', ''),
                 note=serializer.validated_data.get('note', ''),
-                processed_at=timezone.now(),
+                processed_at=timezone.localtime(),
                 status='SUCCESS',
             )
 

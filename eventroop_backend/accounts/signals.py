@@ -62,7 +62,7 @@ def generate_employee_id(sender, instance, created, **kwargs):
         if not prefix:
             return
 
-        year = timezone.now().year
+        year = timezone.localtime().year
         owner_id = instance.created_by.id if instance.created_by else 999
         
         # Use transaction to ensure atomicity and prevent race conditions

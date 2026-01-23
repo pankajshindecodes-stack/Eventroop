@@ -35,7 +35,7 @@ class LoginView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            user.last_login = timezone.now()
+            user.last_login = timezone.localtime()
             user.save()
 
             refresh = RefreshToken.for_user(user)
@@ -394,7 +394,7 @@ class UserPlanViewSet(viewsets.ModelViewSet):
     def expire(self, request, pk=None):
         plan = self.get_object()
         plan.is_active = False
-        plan.end_date = timezone.now()
+        plan.end_date = timezone.localtime()
         plan.save()
         return Response({"detail": "Plan expired."})
 
@@ -404,7 +404,7 @@ class UserPlanViewSet(viewsets.ModelViewSet):
         plan.is_active = True
         if (
             plan.plan.plan_type == "SUBSCRIPTION"
-            and (not plan.end_date or plan.end_date < timezone.now())
+            and (not plan.end_date or plan.end_date < timezone.localtime())
         ):
             plan.end_date = plan.start_date + timezone.timedelta(days=plan.plan.duration_days)
         plan.save()
