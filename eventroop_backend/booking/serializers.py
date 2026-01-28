@@ -124,7 +124,7 @@ class InvoiceBookingServiceSerializer(serializers.ModelSerializer):
 class InvoiceBookingSerializer(serializers.ModelSerializer):
     """Serializer for venue bookings"""
     patient = PatientMiniSerializer(read_only=True)
-    patient_id = serializers.IntegerField(required=True)
+    patient_id = serializers.IntegerField(required=True,source="patient.id")
     user_id = serializers.IntegerField(source='user.id',read_only=True)
     user_name = serializers.CharField(source='user.get_full_name',read_only=True)
 
@@ -142,8 +142,6 @@ class InvoiceBookingSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'invoice_number',
-            'patient_id',
-            'patient',
             'user_id',
             'user_name',
             'venue_id',
@@ -155,6 +153,8 @@ class InvoiceBookingSerializer(serializers.ModelSerializer):
             'total_amount',
             'status',
             'booking_type',
+            'patient_id',
+            'patient',
             'services',
         ]
         read_only_fields = ['invoice_number','patient', 'subtotal', 'created_at']

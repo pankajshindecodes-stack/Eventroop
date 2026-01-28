@@ -638,8 +638,6 @@ class TotalInvoice(models.Model):
         return f"Invoice {self.patient,} | {self.user}"
 
     def recalculate_totals(self):
-        if not self.pk:
-            return
         
         booking_total = self.booking.subtotal if self.booking else Decimal('0.00')
 

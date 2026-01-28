@@ -318,7 +318,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
 
         # Verify patient ownership
         try:
-            patient = Patient.objects.get(id=patient_id, user=request.user)
+            patient = Patient.objects.get(id=patient_id)
         except Patient.DoesNotExist:
             return Response(
                 {'error': 'Patient not found or unauthorized'},
@@ -378,7 +378,9 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             booking_type=booking_type,
             status=InvoiceBookingStatus.BOOKED
         )
-
+        # invoice = booking.invoice
+        # invoice.recalculate_totals()
+        
         return Response(
             {"message": "Venue booked successfully.", "id": booking.id},
             status=status.HTTP_201_CREATED
