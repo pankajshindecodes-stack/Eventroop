@@ -87,13 +87,12 @@ class PackageSerializer(serializers.ModelSerializer):
         return value
 
 class PackageListSerializer(serializers.ModelSerializer):
-    owner_name = serializers.CharField(source='owner.get_full_name', read_only=True)
     belongs_to_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Package
         fields = [
-            'id', 'owner_name', 'name', 'package_type',
+            'id', 'name', 'package_type',
             'price', 'is_active', 'belongs_to_type',
         ]
 

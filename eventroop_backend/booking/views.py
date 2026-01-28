@@ -1,16 +1,14 @@
-from venue_manager.models import Venue, Service
+from venue_manager.models import Venue, Service,Resource
 from venue_manager.serializers import VenueSerializer, ServiceSerializer
 from rest_framework import viewsets, permissions, status
 from .serializers import *
 from .models import *
-from .filters import EntityFilter
+from .filters import EntityFilter,InvoiceBookingFilter
 from django.db.models import Q, Sum, Count
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.utils import timezone
-from datetime import datetime
-from decimal import Decimal
+from dateutil import parser
 
 class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -187,228 +185,203 @@ class PackageViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(packages, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=["get"])
     def by_belongs_to(self, request):
         """
-        Example:
-        /booking/packages/by_belongs_to/?content_type=venue&object_id=3
+        Examples:
+
+        /booking/packages/by_belongs_to/?entity=venue
+            -> returns all venues (id, name)
+
+        /booking/packages/by_belongs_to/?entity=venue&id=3
+            -> returns packages of venue 3
         """
-        from django.contrib.contenttypes.models import ContentType
-        
-        content_type_name = request.query_params.get('content_type')
-        object_id = request.query_params.get('object_id')
 
-        if not content_type_name or not object_id:
+        content_type_name = request.query_params.get("entity")
+        object_id = request.query_params.get("id")
+
+        if not content_type_name:
             return Response(
-                {'error': 'content_type and object_id are required'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "content_type is required"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
+        ENTITY_MAP = {
+            "venue": Venue,
+            "service": Service,
+            "resource": Resource,
+        }
+
+        content_type_name = content_type_name.lower()
+
+        if content_type_name not in ENTITY_MAP:
+            return Response(
+                {"error": "content_type must be venue, service, or resource"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        Model = ENTITY_MAP[content_type_name]
+
+        # ==================================================
+        # CASE 1 → Only content_type → return entities
+        # ==================================================
+        if not object_id:
+            queryset = Model.objects.filter(owner=request.user, is_active=True)
+
+            data = queryset.values("id", "name")
+
+            return Response(data)
+
+        # ==================================================
+        # CASE 2 → content_type + object_id → return packages
+        # ==================================================
         try:
-            # Resolve model name → ContentType row
-            content_type = ContentType.objects.get(model=content_type_name.lower())
-        except ContentType.DoesNotExist:
+            obj = Model.objects.get(
+                id=object_id,
+                owner=request.user,
+                is_active=True,
+            )
+        except Model.DoesNotExist:
             return Response(
-                {'error': f'Invalid content_type: {content_type_name}'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": f"{content_type_name.title()} not found"},
+                status=status.HTTP_404_NOT_FOUND,
             )
 
-        packages = self.get_queryset().filter(
-            content_type=content_type,
-            object_id=object_id
-        )
+        # ⭐ GenericRelation
+        packages = obj.packages.all()
 
-        serializer = self.get_serializer(packages, many=True)
+        serializer = PackageListSerializer(packages, many=True)
         return Response(serializer.data)
 
 class InvoiceBookingViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for managing invoice bookings and services
-    Provides endpoints for:
-    - Listing all bookings for a patient/user
-    - Creating new bookings
-    - Booking services
+    ViewSet for managing invoice bookings with proper authorization and validation
     """
-    
     queryset = InvoiceBooking.objects.select_related(
         'user', 'patient', 'venue', 'venue_package'
     )
     serializer_class = InvoiceBookingSerializer
+    filterset_class = InvoiceBookingFilter
 
+    search_fields = [
+        "patient__first_name",
+        "patient__last_name",
+        "patient__email",
+        "venue__name",
+    ]
+
+    ordering_fields = [
+        "start_datetime",
+        "end_datetime",
+        "created_at",
+    ]
+
+    ordering = ["-created_at"]
     def get_queryset(self):
-        """Filter bookings based on user and optional filters"""
+        """Filter bookings with proper authorization and optimization"""
         queryset = InvoiceBooking.objects.select_related(
             'user', 'patient', 'venue', 'venue_package'
-        ).prefetch_related('services')
+        ).prefetch_related(
+            'services',
+            'services__service',
+            'services__service_package'
+        )
 
-        # Filter by current user
+        # Authorization: customers can only see their own bookings
         user = self.request.user
         if user.is_customer:
             queryset = queryset.filter(user=user)
 
-        # Optional filters
-        patient_id = self.request.query_params.get('patient_id')
-        status_filter = self.request.query_params.get('status')
-        venue_id = self.request.query_params.get('venue_id')
-
-        if patient_id:
-            queryset = queryset.filter(patient_id=patient_id)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        if venue_id:
-            queryset = queryset.filter(venue_id=venue_id)
         return queryset
 
-    def create(self, request, *args, **kwargs):
-        """Create a new venue booking"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
+    def _validate_datetime_range(self, start_str, end_str):
+        """Helper: Validate and parse datetime range"""
         try:
-            patient = Patient.objects.get(id=request.data.get('patient_id'))
-            
-            InvoiceBooking.objects.create(
-                user=request.user,
-                patient=patient,
-                venue_id=request.data.get('venue_id'),
-                venue_package_id=request.data.get('venue_package_id'),
-                start_datetime=request.data.get('start_datetime'),
-                end_datetime=request.data.get('end_datetime'),
-                booking_type=request.data.get('booking_type'),
-                status=InvoiceBookingStatus.BOOKED
-            )
+            start = parser.parse(start_str)
+            end = parser.parse(end_str)
+        except (ValueError, TypeError):
+            raise ValueError('Invalid datetime format. Use ISO 8601.')
+        
+        if end <= start:
+            raise ValueError('end_datetime must be after start_datetime')
+        
+        if start < timezone.now():
+            raise ValueError('Cannot create bookings for past dates')
+        
+        return start, end
 
-            return Response(
-                {"message": "Venue Booked successfully."},
-                status=status.HTTP_201_CREATED
-            )
+    def create(self, request, *args, **kwargs):
+        """Create booking with full validation"""
+        patient_id = request.data.get('patient_id')
+        venue_id = request.data.get('venue_id')
+        venue_package_id = request.data.get('venue_package_id')
+
+        # Verify patient ownership
+        try:
+            patient = Patient.objects.get(id=patient_id, user=request.user)
         except Patient.DoesNotExist:
             return Response(
-                {'error': 'Patient not found'},
+                {'error': 'Patient not found or unauthorized'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        except Exception as e:
+
+        # Verify venue exists
+        try:
+            venue = Venue.objects.get(id=venue_id)
+        except Venue.DoesNotExist:
+            return Response(
+                {'error': 'Venue not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Verify package exists and belongs to venue
+        try:
+            package = Package.objects.get(
+                id=venue_package_id,
+                content_type__model='venue'
+            )
+        except Package.DoesNotExist:
+            return Response(
+                {'error': 'Invalid package for this venue'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate datetime range
+        try:
+            start, end = self._validate_datetime_range(
+                request.data.get('start_datetime'),
+                request.data.get('end_datetime')
+            )
+        except ValueError as e:
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=True, methods=['post'])
-    def book_service(self, request, pk=None):
-        """
-        Book a service for an existing venue booking
-        POST payload:
-        {
-            "service_id": 1,
-            "service_package_id": 2,
-            "start_datetime": "2024-02-15T10:00:00Z",
-            "end_datetime": "2024-02-15T12:00:00Z"
-        }
-        """
-        booking = self.get_object()
-        serializer = BookServiceSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            # Verify service exists
-            from venue_manager.models import Service
-            service = Service.objects.get(id=serializer.validated_data['service_id'])
-
-            # Verify package exists
-            package = get_object_or_404(
-                Package,
-                id=serializer.validated_data['service_package_id']
-            )
-
-            # Create service booking
-            service_booking = InvoiceBookingService.objects.create(
-                booking=booking,
-                user=request.user,
-                patient=booking.patient,
-                service=service,
-                service_package=package,
-                start_datetime=serializer.validated_data['start_datetime'],
-                end_datetime=serializer.validated_data['end_datetime'],
-                status=InvoiceBookingStatus.BOOKED
-            )
-            invoice = booking.invoice
-            invoice.service_bookings.add(service_booking)
-            invoice.recalculate_totals()
-
-
+        # Validate booking type
+        booking_type = request.data.get('booking_type', BookingTypeChoices.IN_HOUSE)
+        valid_types = [choice[0] for choice in BookingTypeChoices.choices]
+        if booking_type not in valid_types:
             return Response(
-                {"message": "Service Booked successfully."},
-                status=status.HTTP_201_CREATED
-            )
-
-        except Exception as e:
-            return Response(
-                {'error': str(e)},
+                {'error': f'Invalid booking_type'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=True, methods=["post"])
-    def cancel_booking(self, request, pk=None):
-        """
-        POST /invoice-bookings/{id}/cancel/
-
-        Cancels booking and all related services.
-        """
-
-        booking = self.get_object()
-        try:
-            booking.cancel()
-            invoice = booking.invoice
-            invoice.recalculate_totals()
-        except ValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        return Response(
-            {"message": "Booking cancelled successfully."},            
-            status=status.HTTP_200_OK
+        # Create booking
+        booking = InvoiceBooking.objects.create(
+            user=request.user,
+            patient=patient,
+            venue=venue,
+            venue_package=package,
+            start_datetime=start,
+            end_datetime=end,
+            booking_type=booking_type,
+            status=InvoiceBookingStatus.BOOKED
         )
-    
-    @action(detail=True, methods=["post"])
-    def cancel_service(self, request, pk=None):
-        """
-        POST /invoice-booking-services/{id}/cancel/
-        """
-
-        booking = self.get_object()
-
-        service_id = request.data.get("service_id")
-
-        if not service_id:
-            return Response(
-                {"detail": "service_id is required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        service = booking.services.filter(id=service_id).first()
-        invoice = booking.invoice
-        invoice.service_bookings.remove(service)
-        invoice.recalculate_totals()
-        if not service:
-            return Response(
-                {"detail": "Service not found in this booking"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-
-        try:
-            service.cancel()
-        except ValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         return Response(
-            {"message": "Service cancelled successfully."},
-            status=status.HTTP_200_OK
+            {"message": "Venue booked successfully.", "id": booking.id},
+            status=status.HTTP_201_CREATED
         )
 
 class TotalInvoiceViewSet(viewsets.ModelViewSet):
