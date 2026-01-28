@@ -560,7 +560,7 @@ class InvoiceBookingService(models.Model):
 # ========================= Invoice =========================
 class InvoiceStatus(models.TextChoices):
     DRAFT = 'DRAFT', 'Draft'
-    PENDING = 'PENDING', 'Pending'
+    UNPAID = 'UNPAID', 'Unpaid'
     PARTIALLY_PAID = 'PARTIALLY_PAID', 'Partially Paid'
     PAID = 'PAID', 'Paid'
     OVERDUE = 'OVERDUE', 'Overdue'
@@ -617,7 +617,7 @@ class TotalInvoice(models.Model):
     status = models.CharField(
         max_length=20,
         choices=InvoiceStatus.choices,
-        default=InvoiceStatus.PENDING,
+        default=InvoiceStatus.UNPAID,
         db_index=True  # Frequently filtered
     )
 
@@ -670,7 +670,7 @@ class TotalInvoice(models.Model):
         self.remaining_amount = self.total_amount - paid
 
         if paid == 0:
-            self.status = InvoiceStatus.PENDING
+            self.status = InvoiceStatus.UNPAID
         elif self.remaining_amount > 0:
             self.status = InvoiceStatus.PARTIALLY_PAID
         else:
@@ -692,14 +692,14 @@ class TotalInvoice(models.Model):
     def get_overdue_invoices(cls):
         """Query helper for overdue invoices"""
         return cls.objects.filter(
-            status__in=[InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID],
+            status__in=[InvoiceStatus.UNPAID, InvoiceStatus.PARTIALLY_PAID],
             due_date__lt=timezone.now().date()
         )
 
     @classmethod
     def get_pending_invoices(cls, patient=None):
         """Query helper for pending invoices"""
-        qs = cls.objects.filter(status=InvoiceStatus.PENDING)
+        qs = cls.objects.filter(status=InvoiceStatus.UNPAID)
         if patient:
             qs = qs.filter(patient=patient)
         return qs

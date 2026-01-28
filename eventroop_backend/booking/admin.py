@@ -101,7 +101,7 @@ class StatusFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         statuses = [
-            (InvoiceStatus.PENDING, 'Pending'),
+            (InvoiceStatus.UNPAID, 'Unpaid'),
             (InvoiceStatus.PARTIALLY_PAID, 'Partially Paid'),
             (InvoiceStatus.PAID, 'Paid'),
             (InvoiceStatus.OVERDUE, 'Overdue'),
@@ -133,7 +133,7 @@ class OverdueFilter(admin.SimpleListFilter):
         if self.value() == 'overdue':
             return queryset.filter(
                 due_date__lt=today,
-                status__in=[InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]
+                status__in=[InvoiceStatus.UNPAID, InvoiceStatus.PARTIALLY_PAID]
             )
         elif self.value() == 'due_soon':
             from datetime import timedelta
@@ -141,12 +141,12 @@ class OverdueFilter(admin.SimpleListFilter):
             return queryset.filter(
                 due_date__lte=soon,
                 due_date__gte=today,
-                status__in=[InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]
+                status__in=[InvoiceStatus.UNPAID, InvoiceStatus.PARTIALLY_PAID]
             )
         elif self.value() == 'on_time':
             return queryset.filter(
                 due_date__gte=today,
-                status__in=[InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]
+                status__in=[InvoiceStatus.UNPAID, InvoiceStatus.PARTIALLY_PAID]
             )
         return queryset
 
@@ -564,9 +564,9 @@ class TotalInvoiceAdmin(admin.ModelAdmin):
 
     
     # Custom Actions
-    @admin.action(description='Mark as Pending')
+    @admin.action(description='Mark as Unpaid')
     def mark_as_pending(self, request, queryset):
-        updated = queryset.update(status=InvoiceStatus.PENDING)
+        updated = queryset.update(status=InvoiceStatus.UNPAID)
         self.message_user(request, f'{updated} invoices marked as pending.')
     
     @admin.action(description='Send Payment Reminder')
