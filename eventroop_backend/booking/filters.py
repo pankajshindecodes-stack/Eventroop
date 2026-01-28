@@ -144,9 +144,13 @@ class InvoiceBookingFilter(django_filters.FilterSet):
         model = InvoiceBooking
         fields = [
             "venue",
+            "services__service",
             "status",
             "booking_type",
         ]
+    @property
+    def qs(self):
+        return super().qs.distinct()
 
     def filter_ongoing(self, queryset, name, value):
         if not value:

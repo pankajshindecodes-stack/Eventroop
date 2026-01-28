@@ -384,6 +384,124 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
 
+    @action(detail=True, methods=['post'])
+    def book_service(self, request, pk=None):
+        """
+        Book a service for an existing venue booking
+        POST payload:
+        {
+            "service_id": 1,
+            "service_package_id": 2,
+            "start_datetime": "2024-02-15T10:00:00Z",
+            "end_datetime": "2024-02-15T12:00:00Z"
+        }
+        """
+        booking = self.get_object()
+        serializer = BookServiceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            # Verify service exists
+            from venue_manager.models import Service
+            service = Service.objects.get(id=serializer.validated_data['service_id'])
+
+            # Verify package exists
+            package = get_object_or_404(
+                Package,
+                id=serializer.validated_data['service_package_id']
+            )
+
+            # Create service booking
+            service_booking = InvoiceBookingService.objects.create(
+                booking=booking,
+                user=request.user,
+                patient=booking.patient,
+                service=service,
+                service_package=package,
+                start_datetime=serializer.validated_data['start_datetime'],
+                end_datetime=serializer.validated_data['end_datetime'],
+                status=InvoiceBookingStatus.BOOKED
+            )
+            invoice = booking.invoice
+            invoice.service_bookings.add(service_booking)
+            invoice.recalculate_totals()
+
+
+            return Response(
+                {"message": "Service Booked successfully."},
+                status=status.HTTP_201_CREATED
+            )
+
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=["post"])
+    def cancel_booking(self, request, pk=None):
+        """
+        POST /invoice-bookings/{id}/cancel/
+
+        Cancels booking and all related services.
+        """
+
+        booking = self.get_object()
+        try:
+            booking.cancel()
+            invoice = booking.invoice
+            invoice.recalculate_totals()
+        except ValidationError as e:
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response(
+            {"message": "Booking cancelled successfully."},            
+            status=status.HTTP_200_OK
+        )
+    
+    @action(detail=True, methods=["post"])
+    def cancel_service(self, request, pk=None):
+        """
+        POST /invoice-booking-services/{id}/cancel/
+        """
+
+        booking = self.get_object()
+
+        service_id = request.data.get("service_id")
+
+        if not service_id:
+            return Response(
+                {"detail": "service_id is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        service = booking.services.filter(id=service_id).first()
+        invoice = booking.invoice
+        invoice.service_bookings.remove(service)
+        invoice.recalculate_totals()
+        if not service:
+            return Response(
+                {"detail": "Service not found in this booking"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+        try:
+            service.cancel()
+        except ValidationError as e:
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response(
+            {"message": "Service cancelled successfully."},
+            status=status.HTTP_200_OK
+        )
+
 class TotalInvoiceViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing total invoices
