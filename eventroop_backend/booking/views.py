@@ -1,10 +1,10 @@
-from venue_manager.models import Venue, Service,Resource
+from venue_manager.models import Venue, Service, Resource
 from venue_manager.serializers import VenueSerializer, ServiceSerializer
 from rest_framework import viewsets, permissions, status
 from .serializers import *
 from .models import *
 from .filters import EntityFilter,InvoiceBookingFilter
-from django.db.models import Q, Sum, Count
+from django.db.models import Q, Sum, Count,Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -149,9 +149,14 @@ class PackageViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         # Owners can only see their own packages, staff can see all
-        if user.is_vsre_staff:
+        print(user.user_type)
+        if user.is_superuser:
+            return Package.objects.all()
+        elif user.is_owner:
+            return Package.objects.filter(owner=user)
+        elif user.is_vsre_staff:
             return Package.objects.filter(owner=user.hierarchy.owner)
-        return Package.objects.filter(owner=user)
+        return Package.objects.none()
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -254,308 +259,236 @@ class PackageViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 class InvoiceBookingViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing invoice bookings with proper authorization and validation
-    """
-    queryset = InvoiceBooking.objects.select_related(
-        'user', 'patient', 'venue', 'venue_package'
-    )
+
     serializer_class = InvoiceBookingSerializer
     filterset_class = InvoiceBookingFilter
 
-    search_fields = [
-        "patient__first_name",
-        "patient__last_name",
-        "patient__email",
-        "venue__name",
-    ]
-
-    ordering_fields = [
-        "start_datetime",
-        "end_datetime",
-        "created_at",
-    ]
-
     ordering = ["-created_at"]
+
     def get_queryset(self):
-        """Filter bookings with proper authorization and optimization"""
         queryset = InvoiceBooking.objects.select_related(
-            'user', 'patient', 'venue', 'venue_package'
+            "user",
+            "patient",
+            "venue",
+            "venue_package",
+            "invoice",
         ).prefetch_related(
-            'services',
-            'services__service',
-            'services__service_package'
+            "services",
+            "services__service",
+            "services__service_package",
         )
 
-        # Authorization: customers can only see their own bookings
         user = self.request.user
         if user.is_customer:
             queryset = queryset.filter(user=user)
 
         return queryset
 
-    def _validate_datetime_range(self, start_str, end_str):
-        """Helper: Validate and parse datetime range"""
-        try:
-            start = parser.parse(start_str)
-            end = parser.parse(end_str)
-        except (ValueError, TypeError):
-            raise ValueError('Invalid datetime format. Use ISO 8601.')
-        
-        if end <= start:
-            raise ValueError('end_datetime must be after start_datetime')
-        
-        if start < timezone.now():
-            raise ValueError('Cannot create bookings for past dates')
-        
-        return start, end
-
     def create(self, request, *args, **kwargs):
-        """Create booking with full validation"""
-        patient_id = request.data.get('patient_id')
-        venue_id = request.data.get('venue_id')
-        venue_package_id = request.data.get('venue_package_id')
 
-        # Verify patient ownership
-        try:
-            patient = Patient.objects.get(id=patient_id)
-        except Patient.DoesNotExist:
-            return Response(
-                {'error': 'Patient not found or unauthorized'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-        # Verify venue exists
-        try:
-            venue = Venue.objects.get(id=venue_id)
-        except Venue.DoesNotExist:
-            return Response(
-                {'error': 'Venue not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        patient = serializer.validated_data["patient"]
 
-        # Verify package exists and belongs to venue
-        try:
-            package = Package.objects.get(
-                id=venue_package_id,
-                content_type__model='venue'
-            )
-        except Package.DoesNotExist:
-            return Response(
-                {'error': 'Invalid package for this venue'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if not (
+            patient.registered_by == request.user
+            or getattr(request.user, "is_owner", False)
+        ):
+            return Response({"error": "Unauthorized patient"}, status=403)
 
-        # Validate datetime range
-        try:
-            start, end = self._validate_datetime_range(
-                request.data.get('start_datetime'),
-                request.data.get('end_datetime')
-            )
-        except ValueError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        booking = serializer.save(user=request.user, status=InvoiceBookingStatus.BOOKED)
 
-        # Validate booking type
-        booking_type = request.data.get('booking_type', BookingTypeChoices.IN_HOUSE)
-        valid_types = [choice[0] for choice in BookingTypeChoices.choices]
-        if booking_type not in valid_types:
-            return Response(
-                {'error': f'Invalid booking_type'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Create booking
-        booking = InvoiceBooking.objects.create(
-            user=request.user,
-            patient=patient,
-            venue=venue,
-            venue_package=package,
-            start_datetime=start,
-            end_datetime=end,
-            booking_type=booking_type,
-            status=InvoiceBookingStatus.BOOKED
+        # Ensure invoice exists
+        invoice, _ = TotalInvoice.objects.get_or_create(
+            booking=booking,
+            defaults={
+                "patient": booking.patient,
+                "user": booking.user,
+            },
         )
-        # invoice = booking.invoice
-        # invoice.recalculate_totals()
-        
+
+        invoice.recalculate_totals()
+
         return Response(
-            {"message": "Venue booked successfully.", "id": booking.id},
-            status=status.HTTP_201_CREATED
+            InvoiceBookingSerializer(booking, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def book_service(self, request, pk=None):
-        """
-        Book a service for an existing venue booking
-        POST payload:
-        {
-            "service_id": 1,
-            "service_package_id": 2,
-            "start_datetime": "2024-02-15T10:00:00Z",
-            "end_datetime": "2024-02-15T12:00:00Z"
-        }
-        """
+
         booking = self.get_object()
+
+        if booking.status == InvoiceBookingStatus.CANCELLED:
+            return Response({"detail": "Booking cancelled"}, status=400)
+
         serializer = BookServiceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            # Verify service exists
-            from venue_manager.models import Service
-            service = Service.objects.get(id=serializer.validated_data['service_id'])
-
-            # Verify package exists
-            package = get_object_or_404(
-                Package,
-                id=serializer.validated_data['service_package_id']
-            )
-
-            # Create service booking
-            service_booking = InvoiceBookingService.objects.create(
-                booking=booking,
-                user=request.user,
-                patient=booking.patient,
-                service=service,
-                service_package=package,
-                start_datetime=serializer.validated_data['start_datetime'],
-                end_datetime=serializer.validated_data['end_datetime'],
-                status=InvoiceBookingStatus.BOOKED
-            )
-            invoice = booking.invoice
-            invoice.service_bookings.add(service_booking)
-            invoice.recalculate_totals()
-
-
-            return Response(
-                {"message": "Service Booked successfully."},
-                status=status.HTTP_201_CREATED
-            )
-
-        except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-    @action(detail=True, methods=["post"])
-    def cancel_booking(self, request, pk=None):
-        """
-        POST /invoice-bookings/{id}/cancel/
-
-        Cancels booking and all related services.
-        """
-
-        booking = self.get_object()
-        try:
-            booking.cancel()
-            invoice = booking.invoice
-            invoice.recalculate_totals()
-        except ValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        return Response(
-            {"message": "Booking cancelled successfully."},            
-            status=status.HTTP_200_OK
+        service = get_object_or_404(Service, id=serializer.validated_data["service_id"])
+        package = get_object_or_404(
+            Package, id=serializer.validated_data["service_package_id"]
         )
+
+        service_booking = InvoiceBookingService.objects.create(
+            booking=booking,
+            user=request.user,
+            patient=booking.patient,
+            service=service,
+            service_package=package,
+            start_datetime=serializer.validated_data["start_datetime"],
+            end_datetime=serializer.validated_data["end_datetime"],
+            status=InvoiceBookingStatus.BOOKED,
+        )
+
+        invoice, _ = TotalInvoice.objects.get_or_create(
+            booking=booking,
+            defaults={"patient": booking.patient, "user": booking.user},
+        )
+
+        invoice.service_bookings.add(service_booking)
+        invoice.recalculate_totals()
+
+        return Response({"message": "Service booked."}, status=201)
     
     @action(detail=True, methods=["post"])
-    def cancel_service(self, request, pk=None):
-        """
-        POST /invoice-booking-services/{id}/cancel/
-        """
+    def cancel_booking(self, request, pk=None):
 
         booking = self.get_object()
 
-        service_id = request.data.get("service_id")
+        try:
+            booking.cancel()
+            booking.invoice.recalculate_totals()
+        except ValidationError as e:
+            return Response({"detail": str(e)}, status=400)
+
+        return Response({"message": "Booking cancelled."})
+
+    @action(detail=True, methods=["post"])
+    def cancel_service(self, request, pk=None):
+
+        booking = self.get_object()
+        service_id = request.data.get("service_booking_id")
 
         if not service_id:
-            return Response(
-                {"detail": "service_id is required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        service = booking.services.filter(id=service_id).first()
-        invoice = booking.invoice
-        invoice.service_bookings.remove(service)
-        invoice.recalculate_totals()
-        if not service:
-            return Response(
-                {"detail": "Service not found in this booking"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"detail": "service_id required"}, status=400)
 
+        service = booking.services.filter(id=service_id).first()
+
+        if not service:
+            return Response({"detail": "Service not found"}, status=404)
 
         try:
             service.cancel()
+            booking.invoice.service_bookings.remove(service)
+            booking.invoice.recalculate_totals()
         except ValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"detail": str(e)}, status=400)
 
-        return Response(
-            {"message": "Service cancelled successfully."},
-            status=status.HTTP_200_OK
-        )
+        return Response({"message": "Service cancelled."})
 
-class TotalInvoiceViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing total invoices
-    Provides endpoints for:
-    - Listing invoices for a user
-    - Retrieving invoice details
-    - Getting overdue and pending invoices
-    """
+class TotalInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
+
+    filterset_fields = [
+        "status",
+        "patient",
+        "user",
+        "booking",
+    ]
+
+    search_fields = [
+        "patient__first_name",
+        "patient__last_name",
+        "user__first_name",
+        "user__last_name",
+        "booking__id",
+    ]
+
+    ordering_fields = [
+        "created_at",
+        "updated_at",
+        "total_amount",
+        "status",
+    ]
+
+    ordering = ["-created_at"]  # default ordering
+
+    serializer_class = TotalInvoiceListSerializer
     
-    queryset = TotalInvoice.objects.select_related(
-        'booking', 'patient', 'user'
-    ).prefetch_related('service_bookings', 'payments')
-    serializer_class = TotalInvoiceSerializer
-
     def get_queryset(self):
-        """Filter invoices based on user"""
-        queryset = TotalInvoice.objects.filter(
-            user=self.request.user
-        ).select_related('booking', 'patient', 'user').prefetch_related(
-            'service_bookings', 'payments'
+
+        queryset = TotalInvoice.objects.select_related(
+            "patient", "user", "booking"
+        ).prefetch_related(
+            Prefetch("payments", queryset=Payment.objects.order_by("-created_at"))
         )
 
-        # Optional filters
-        patient_id = self.request.query_params.get('patient_id')
-        status_filter = self.request.query_params.get('status')
+        user = self.request.user
+        if user.is_customer:
+            queryset = queryset.filter(user=user)
 
-        if patient_id:
-            queryset = queryset.filter(patient_id=patient_id)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
+        return queryset.order_by("-created_at")
 
-        return queryset
+class PaymentViewSet(viewsets.ModelViewSet):
+    serializer_class = PaymentSerializer
+    queryset = Payment.objects.select_related(
+        "invoice",
+        "patient"
+    ).order_by("-created_at")
 
-    @action(detail=False, methods=['get'])
-    def overdue_invoices(self, request):
-        """Get all overdue invoices for the current user"""
-        overdue = TotalInvoice.get_overdue_invoices().filter(user=request.user)
-        serializer = self.get_serializer(overdue, many=True)
-        return Response(serializer.data)
+    # Exact filtering
+    filterset_fields = [
+        "invoice",
+        "patient",
+        "method",
+        "is_verified",
+    ]
 
-    @action(detail=False, methods=['get'])
-    def pending_invoices(self, request):
+    # Search (partial match)
+    search_fields = [
+        "reference",
+        "invoice__invoice_number",
+        "patient__first_name",
+        "patient__last_name",
+    ]
+
+    # Ordering
+    ordering_fields = [
+        "created_at",
+        "amount",
+        "method",
+        "is_verified",
+    ]
+
+    ordering = ["-created_at"]
+
+    @transaction.atomic
+    def perform_create(self, serializer):
         """
-        Get all pending invoices
-        Query params:
-        - patient_id: Filter by patient (optional)
+        Atomic create so invoice + payment always stay in sync
         """
-        patient_id = request.query_params.get('patient_id')
-        pending = TotalInvoice.get_pending_invoices(
-            patient=Patient.objects.get(id=patient_id) if patient_id else None
-        ).filter(user=request.user)
-        
-        serializer = self.get_serializer(pending, many=True)
-        return Response(serializer.data)
+        serializer.save()
 
+    # ---------------- Custom Actions ---------------- #
+
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        """
+        Mark payment as verified
+        POST /payments/{id}/verify/
+        """
+        payment = self.get_object()
+        payment.is_verified = True
+        payment.save(update_fields=["is_verified", "updated_at"])
+
+        return Response({"status": "payment verified"})
+
+    @action(detail=False, methods=["get"])
+    def unverified(self, request):
+        """
+        /payments/unverified/
+        """
+        qs = Payment.get_unverified_payments()
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
