@@ -149,7 +149,6 @@ class PackageViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         # Owners can only see their own packages, staff can see all
-        print(user.user_type)
         if user.is_superuser:
             return Package.objects.all()
         elif user.is_owner:
@@ -507,7 +506,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
     ]
 
     ordering = ["-created_at"]
+    def get_queryset(self):
+        queryset = self.queryset
 
+        user = self.request.user
+        if user.is_customer:
+            queryset = queryset.filter(invoice__user=user)
+
+        return queryset
+
+ 
     @transaction.atomic
     def perform_create(self, serializer):
         """

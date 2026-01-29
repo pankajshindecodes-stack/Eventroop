@@ -230,13 +230,15 @@ class PaymentSerializer(serializers.ModelSerializer):
 class TotalInvoiceListSerializer(serializers.ModelSerializer):
     payments = PaymentSerializer(many=True, read_only=True)
     patient_name = serializers.CharField(source="patient.get_full_name", read_only=True)
-
+    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
+    
     class Meta:
         model = TotalInvoice
         fields = [
             "id",
             "invoice_number",
             "patient",
+            "user_name",
             "patient_name",
             "total_amount",
             "paid_amount",
@@ -246,3 +248,5 @@ class TotalInvoiceListSerializer(serializers.ModelSerializer):
             "created_at",
             "payments",
         ]
+
+          
