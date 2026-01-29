@@ -80,7 +80,17 @@ class Package(models.Model):
     )
 
     # Polymorphic relation: belongs_to → Venue | Service | Resource
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True, blank=True)
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        limit_choices_to={
+            'model__in': [
+                'venue','service','resource'
+            ]
+        }
+    )
     object_id = models.PositiveIntegerField(null=True, blank=True)
     belongs_to = GenericForeignKey('content_type', 'object_id')
 

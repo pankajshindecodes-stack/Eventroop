@@ -38,7 +38,7 @@ class PackageAdmin(admin.ModelAdmin):
         }),
         ('Polymorphic Relation', {
             'fields': ('content_type', 'object_id','belongs_to'),
-            'classes': ('collapse',)
+            # 'classes': ('collapse',)
         }),
         ('Metadata', {
             'fields': ('created_at', 'updated_at'),
@@ -46,10 +46,10 @@ class PackageAdmin(admin.ModelAdmin):
         }),
     )
     
-    def get_readonly_fields(self, request, obj=None):
-        if obj:  # Editing existing object
-            return self.readonly_fields + ('content_type', 'object_id')
-        return self.readonly_fields
+    # def get_readonly_fields(self, request, obj=None):
+    #     if obj:  # Editing existing object
+    #         return self.readonly_fields + ('content_type', 'object_id')
+    #     return self.readonly_fields
 
 
 @admin.register(Patient)
