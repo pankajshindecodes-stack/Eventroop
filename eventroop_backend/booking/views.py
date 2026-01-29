@@ -406,9 +406,12 @@ class TotalInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     ]
 
     ordering_fields = [
+        "user",
+        "patient",
         "created_at",
         "updated_at",
         "total_amount",
+        "paid_amount",
         "status",
     ]
 
@@ -429,6 +432,48 @@ class TotalInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(user=user)
 
         return queryset.order_by("-created_at")
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """
+        Example:
+        /total-invoices/summary/
+        /total-invoices/summary/?status=PAID
+        """
+
+        # IMPORTANT: use filtered queryset (so filters/search apply)
+        queryset = self.filter_queryset(self.get_queryset())
+
+        today = timezone.now().date()
+
+        data = {
+            "total_invoices": queryset.count(),
+
+            "total_amount_sum": queryset.aggregate(
+                total=Sum("total_amount")
+            )["total"] or 0,
+
+            "paid_amount_sum": queryset.aggregate(
+                paid=Sum("paid_amount")
+            )["paid"] or 0,
+
+            # Status based counts (adjust status values to your model)
+            "paid_count": queryset.filter(status="PAID").count(),
+
+            "unpaid_count": queryset.filter(status="UNPAID").count(),
+
+            "partial_paid_count": queryset.filter(status="PARTIAL").count(),
+
+            "pending_count": queryset.filter(status="PENDING").count(),
+
+            # Overdue (due_date < today AND not paid)
+            "overdue_count": queryset.filter(
+                Q(due_date__lt=today) & ~Q(status="PAID")
+            ).count(),
+        }
+
+        return Response(data)
+
 
 class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentSerializer
