@@ -24,7 +24,7 @@ class LocationAdmin(admin.ModelAdmin):
 
 @admin.register(Package)
 class PackageAdmin(admin.ModelAdmin):
-    list_display = ('name', 'owner', 'package_type', 'period', 'price', 'is_active')
+    list_display = ('name', 'owner', 'belongs_to', 'package_type', 'period', 'price', 'is_active')
     list_filter = ('package_type', 'period', 'is_active', 'created_at')
     search_fields = ('name', 'owner__email')
     readonly_fields = ('belongs_to','created_at', 'updated_at')
@@ -46,10 +46,6 @@ class PackageAdmin(admin.ModelAdmin):
         }),
     )
     
-    # def get_readonly_fields(self, request, obj=None):
-    #     if obj:  # Editing existing object
-    #         return self.readonly_fields + ('content_type', 'object_id')
-    #     return self.readonly_fields
 
 
 @admin.register(Patient)

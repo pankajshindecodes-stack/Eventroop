@@ -91,7 +91,6 @@ class PackageSerializer(serializers.ModelSerializer):
             "id",
             "created_at",
             "updated_at",
-            "content_type",
             "owner",
             "owner_name",
         ]
@@ -114,14 +113,13 @@ class PackageSerializer(serializers.ModelSerializer):
         return value
 
 class PackageListSerializer(serializers.ModelSerializer):
-    belongs_to_type = serializers.SerializerMethodField()
+    belongs_to_type = serializers.CharField(source='content_type.model',read_only=True)
+    belong_to = serializers.CharField(source='belongs_to',read_only=True)
+
 
     class Meta:
         model = Package
-        fields = ["id", "name", "package_type", "price", "is_active", "belongs_to_type"]
-
-    def get_belongs_to_type(self, obj):
-        return obj.content_type.model if obj.content_type else None
+        fields = ["id", "name", "price", "is_active","package_type", "belong_to","belongs_to_type"]
 
 class InvoiceBookingServiceSerializer(serializers.ModelSerializer):
     service_name = serializers.CharField(source="service.name", read_only=True)
@@ -248,5 +246,3 @@ class TotalInvoiceListSerializer(serializers.ModelSerializer):
             "created_at",
             "payments",
         ]
-
-          
