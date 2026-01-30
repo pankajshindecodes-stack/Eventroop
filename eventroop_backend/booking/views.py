@@ -1,14 +1,14 @@
-from venue_manager.models import Venue,Service
-from venue_manager.serializers import VenueSerializer,ServiceSerializer
-from rest_framework import viewsets, permissions,status
+from venue_manager.models import Venue, Service, Resource
+from venue_manager.serializers import VenueSerializer, ServiceSerializer
+from rest_framework import viewsets, permissions, status
 from .serializers import *
-from .models import Patient,Package
-from .filters import EntityFilter
-from django.db.models import Q,Sum,Count
+from .models import *
+from .filters import EntityFilter,InvoiceBookingFilter
+from django.db.models import Q, Sum, Count,Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
 from rest_framework.response import Response
-
+from dateutil import parser
 
 class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -59,13 +59,7 @@ class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Service.objects.filter(is_deleted=False, is_active=True).order_by("id")
 
     filterset_fields = {
-        # "category": ["iexact", "icontains"],
-        # "sub_category": ["iexact", "icontains"],
         "city": ["iexact", "icontains"],
-        # "tags": ["iexact", "icontains"],
-        # "starting_price": ["gte", "lte"],
-        # "rating": ["gte", "lte", "exact"],
-
     }
 
     search_fields = [
@@ -95,7 +89,6 @@ class PatientViewSet(viewsets.ModelViewSet):
                 Q(registered_by=user)
             )
 
-
         # Manager/Staff → only their own patients
         return Patient.objects.filter(registered_by=user)
 
@@ -112,7 +105,7 @@ class LocationViewSet(viewsets.ModelViewSet):
     search_fields = [
         "user__first_name",
         "user__email",
-        "user__mobile_number"
+        "user__mobile_number",
         "building_name",
         "address_line1",
         "locality",
@@ -130,7 +123,7 @@ class LocationViewSet(viewsets.ModelViewSet):
         else:
             qs = Location.objects.filter(user=user)
 
-        return qs.order_by("-id")  # or any default ordering you prefer
+        return qs.order_by("-id")
     
     def perform_create(self, serializer):
         # Automatically set the user to the requesting user
@@ -156,9 +149,13 @@ class PackageViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         # Owners can only see their own packages, staff can see all
-        if user.is_vsre_staff:
+        if user.is_superuser:
+            return Package.objects.all()
+        elif user.is_owner:
+            return Package.objects.filter(owner=user)
+        elif user.is_vsre_staff:
             return Package.objects.filter(owner=user.hierarchy.owner)
-        return Package.objects.filter(owner=user)
+        return Package.objects.none()
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -192,520 +189,359 @@ class PackageViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(packages, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=["get"])
     def by_belongs_to(self, request):
         """
-        Example:
-        /booking/packages/by_belongs_to/?content_type=venue&object_id=3
+        Examples:
+
+        /booking/packages/by_belongs_to/?entity=venue
+            -> returns all venues (id, name)
+
+        /booking/packages/by_belongs_to/?entity=venue&id=3
+            -> returns packages of venue 3
         """
-        content_type_name = request.query_params.get('content_type')
-        object_id = request.query_params.get('object_id')
 
-        if not content_type_name or not object_id:
+        content_type_name = request.query_params.get("entity")
+        object_id = request.query_params.get("id")
+
+        if not content_type_name:
             return Response(
-                {'error': 'content_type and object_id are required'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "content_type is required"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
+        ENTITY_MAP = {
+            "venue": Venue,
+            "service": Service,
+            "resource": Resource,
+        }
+
+        content_type_name = content_type_name.lower()
+
+        if content_type_name not in ENTITY_MAP:
+            return Response(
+                {"error": "content_type must be venue, service, or resource"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        Model = ENTITY_MAP[content_type_name]
+
+        # ==================================================
+        # CASE 1 → Only content_type → return entities
+        # ==================================================
+        if not object_id:
+            queryset = Model.objects.filter(owner=request.user, is_active=True)
+
+            data = queryset.values("id", "name")
+
+            return Response(data)
+
+        # ==================================================
+        # CASE 2 → content_type + object_id → return packages
+        # ==================================================
         try:
-            # Resolve model name → ContentType row
-            content_type = ContentType.objects.get(model=content_type_name.lower())
-        except ContentType.DoesNotExist:
+            obj = Model.objects.get(
+                id=object_id,
+                owner=request.user,
+                is_active=True,
+            )
+        except Model.DoesNotExist:
             return Response(
-                {'error': f'Invalid content_type: {content_type_name}'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": f"{content_type_name.title()} not found"},
+                status=status.HTTP_404_NOT_FOUND,
             )
 
-        packages = self.get_queryset().filter(
-            content_type=content_type,
-            object_id=object_id
-        )
+        # ⭐ GenericRelation
+        packages = obj.packages.all()
 
-        serializer = self.get_serializer(packages, many=True)
+        serializer = PackageListSerializer(packages, many=True)
         return Response(serializer.data)
 
-class BookingViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing venue bookings.
-    
-    Supports filtering by: status, user, patient, venue
-    Search fields: patient__name, invoice__invoice_number
-    Ordering: start_datetime, created_at, final_amount
-    """
-    filterset_fields = ['status', 'user', 'patient', 'venue']
-    search_fields = ['patient__name', 'invoice__invoice_number']
-    ordering_fields = ['start_datetime', 'created_at', 'final_amount']
-    ordering = ['-created_at']
-    
+class InvoiceBookingViewSet(viewsets.ModelViewSet):
+
+    serializer_class = InvoiceBookingSerializer
+    filterset_class = InvoiceBookingFilter
+
+    ordering = ["-created_at"]
+
     def get_queryset(self):
-        """Filter bookings based on user role"""
+        queryset = InvoiceBooking.objects.select_related(
+            "user",
+            "patient",
+            "venue",
+            "venue_package",
+            "invoice",
+        ).prefetch_related(
+            "services",
+            "services__service",
+            "services__service_package",
+        )
+
         user = self.request.user
-        queryset = Booking.objects.select_related(
-            'user', 'patient', 'venue', 'venue_package'
-        ).prefetch_related('booking_services')
-        
         if user.is_customer:
             queryset = queryset.filter(user=user)
-        
+
         return queryset
-    
-    def get_serializer_class(self):
-        """Return appropriate serializer based on action"""
-        if self.action == 'create':
-            return BookingCreateUpdateSerializer
-        elif self.action in ['update', 'partial_update']:
-            return BookingCreateUpdateSerializer
-        return BookingListSerializer
-    
-    def perform_create(self, serializer):
-        """Set user to current request user and initial status"""
-        try:
-            serializer.save(
-                user=self.request.user,
-                status=BookingStatus.DRAFT
-            )
-        except ValidationError as e:
-            raise serializers.ValidationError(e.message_dict)
-    
-    def perform_update(self, serializer):
-        """Handle booking updates"""
-        try:
-            serializer.save()
-        except ValidationError as e:
-            raise serializers.ValidationError(e.message_dict)
-    
-    @action(detail=True, methods=['patch'])
-    def update_status(self, request, pk=None):
-        """Update booking status"""
-        booking = self.get_object()
-        new_status = request.data.get('status')
-        
-        # Validate status
-        valid_statuses = dict(BookingStatus.choices)
-        if new_status not in valid_statuses:
-            return Response(
-                {'error': f'Invalid status. Valid options: {list(valid_statuses.keys())}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        booking.status = new_status
-        try:
-            booking.save()
-            serializer = self.get_serializer(booking)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except ValidationError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-    
-    @action(detail=True, methods=['post'])
-    def cancel(self, request, pk=None):
-        """Cancel an existing booking"""
-        booking = self.get_object()
-        
-        # Prevent cancellation of completed/already cancelled bookings
-        if booking.status in [BookingStatus.FULFILLED, BookingStatus.CANCELLED]:
-            return Response(
-                {'error': f'Cannot cancel booking with status: {booking.status}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        booking.status = BookingStatus.CANCELLED
-        try:
-            booking.save()
-            return Response(
-                {
-                    'message': 'Booking cancelled successfully',
-                    'booking': self.get_serializer(booking).data
-                },
-                status=status.HTTP_200_OK
-            )
-        except ValidationError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-    
-    @action(detail=False, methods=['get'])
-    def upcoming(self, request):
-        """Get upcoming bookings for current user"""
-        upcoming_bookings = self.get_queryset().filter(
-            status=BookingStatus.BOOKED,
-            start_datetime__gt=timezone.now()
-        )
-        serializer = self.get_serializer(upcoming_bookings, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['get'])
-    def ongoing(self, request):
-        """Get currently ongoing bookings"""
-        ongoing_bookings = self.get_queryset().filter(
-            status=BookingStatus.IN_PROGRESS
-        )
-        serializer = self.get_serializer(ongoing_bookings, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['post'])
-    def recalculate_costs(self, request, pk=None):
-        """Manually recalculate booking costs"""
-        booking = self.get_object()
-        try:
-            booking.recalculate_totals()
-            booking.save()
-            serializer = self.get_serializer(booking)
-            return Response(
-                {
-                    'message': 'Costs recalculated successfully',
-                    'booking': serializer.data
-                },
-                status=status.HTTP_200_OK
-            )
-        except ValidationError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-class BookingServiceViewSet(viewsets.ModelViewSet):
-    serializer_class = BookingServiceSerializer
-    filterset_fields = ['booking', 'service', 'status', 'patient']
-    search_fields = ['service__name', 'patient__name']
-    ordering_fields = ['start_datetime', 'created_at', 'service_total_price']
-    ordering = ['start_datetime']
-    
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_customer:
-            return BookingService.objects.filter(user=user).select_related('booking', 'service', 'service_package')
-        return BookingService.objects.all().select_related('booking', 'service', 'service_package')
-    
-        
-    @action(detail=False, methods=['get'])
-    def by_booking(self, request):
-        """
-        Get all services for a specific booking.
-        
-        Query parameters:
-        - booking_id: The booking ID (required)
-        """
-        booking_id = request.query_params.get('booking_id')
 
-        if not booking_id:
-            return Response(
-                {'error': 'booking_id query parameter is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    def create(self, request, *args, **kwargs):
 
-        # Verify booking belongs to user
-        booking_intance = get_object_or_404(Booking, id=booking_id)
-
-        services = self.get_queryset().filter(booking=booking_intance)
-        serializer = self.get_serializer(services, many=True)
-        return Response(
-            {
-                'booking_id': booking_id,
-                'booking_patient': booking_intance.patient.get_full_name(),
-                'services_count': services.count(),
-                'total_services_cost': str(booking_intance.services_cost),
-                'services': serializer.data
-            },
-            status=status.HTTP_200_OK
-        )
-
-    @action(detail=False, methods=['get'])
-    def by_service(self, request):
-        """
-        Get all bookings/instances for a specific service.
-        
-        Query parameters:
-        - service_id: The service ID (required)
-        """
-        service_id = request.query_params.get('service_id')
-
-        if not service_id:
-            return Response(
-                {'error': 'service_id query parameter is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        services = self.get_queryset().filter(service_id=service_id)
-
-        if not services.exists():
-            return Response(
-                {'error': 'No services found for the given service_id'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        serializer = self.get_serializer(services, many=True)
-
-        return Response(
-            {
-                'service_id': service_id,
-                'bookings_count': services.count(),
-                'total_revenue': str(sum(s.service_total_price for s in services)),
-                'services': serializer.data
-            },
-            status=status.HTTP_200_OK
-        )
-
-    @action(detail=True, methods=['patch'])
-    def update_status(self, request, pk=None):
-
-        """
-        Change the status of a BookingService.
-        
-        Request body:
-        {
-            "status": "IN_PROGRESS"
-        }
-        """
-        booking_service = self.get_object()
-        new_status = request.data.get('status')
-
-        if not new_status:
-            return Response(
-                {'error': 'status is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        booking_service.status = new_status
-        booking_service.save(update_fields=['status'])
-
-        return Response(
-            self.get_serializer(booking_service).data,
-            status=status.HTTP_200_OK
-        )
-
-class InvoiceTransactionViewSet(viewsets.ModelViewSet):
-    queryset = InvoiceTransaction.objects.all()
-    serializer_class = InvoiceTransactionSerializer
-
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        
-        # Filters
-        booking_id = self.request.query_params.get("booking_id")
-        invoice_for = self.request.query_params.get("invoice_for")
-        status_filter = self.request.query_params.get("status")
-        transaction_type = self.request.query_params.get("transaction_type")
-        payment_method = self.request.query_params.get("payment_method")
-        
-        if booking_id:
-            queryset = queryset.filter(booking_id=booking_id)
-        if invoice_for:
-            queryset = queryset.filter(invoice_for=invoice_for)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        if transaction_type:
-            queryset = queryset.filter(transaction_type=transaction_type)
-        if payment_method:
-            queryset = queryset.filter(payment_method=payment_method)
-
-        return queryset.prefetch_related("service_bookings").select_related(
-            "booking", "created_by"
-        )
-
-    @action(detail=False, methods=["post"])
-    def create_payment(self, request):
-        """
-        Create a payment, refund, or adjustment transaction.
-        
-        POST /api/invoices/create_payment/
-        {
-            "booking_id": 1,
-            "invoice_for": "VENUE",
-            "paid_amount": 5000.00,
-            "payment_method": "CARD",
-            "transaction_type": "PAYMENT",
-            "remarks": "Payment received",
-            "due_date": "2026-02-15"
-        }
-        """
-        serializer = CreatePaymentSerializer(data=request.data)
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        patient = serializer.validated_data["patient"]
+
+        if not (
+            patient.registered_by == request.user
+            or getattr(request.user, "is_owner", False)
+        ):
+            return Response({"error": "Unauthorized patient"}, status=403)
+
+        booking = serializer.save(user=request.user, status=InvoiceBookingStatus.BOOKED)
+
+        # Ensure invoice exists
+        invoice, _ = TotalInvoice.objects.get_or_create(
+            booking=booking,
+            defaults={
+                "patient": booking.patient,
+                "user": booking.user,
+            },
+        )
+
+        invoice.recalculate_totals()
+
+        return Response(
+            InvoiceBookingSerializer(booking, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def book_service(self, request, pk=None):
+
+        booking = self.get_object()
+
+        if booking.status == InvoiceBookingStatus.CANCELLED:
+            return Response({"detail": "Booking cancelled"}, status=400)
+
+        serializer = BookServiceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = get_object_or_404(Service, id=serializer.validated_data["service_id"])
+        package = get_object_or_404(
+            Package, id=serializer.validated_data["service_package_id"]
+        )
+
+        service_booking = InvoiceBookingService.objects.create(
+            booking=booking,
+            user=request.user,
+            patient=booking.patient,
+            service=service,
+            service_package=package,
+            start_datetime=serializer.validated_data["start_datetime"],
+            end_datetime=serializer.validated_data["end_datetime"],
+            status=InvoiceBookingStatus.BOOKED,
+        )
+
+        invoice, _ = TotalInvoice.objects.get_or_create(
+            booking=booking,
+            defaults={"patient": booking.patient, "user": booking.user},
+        )
+
+        invoice.service_bookings.add(service_booking)
+        invoice.recalculate_totals()
+
+        return Response({"message": "Service booked."}, status=201)
+    
+    @action(detail=True, methods=["post"])
+    def cancel_booking(self, request, pk=None):
+
+        booking = self.get_object()
+
         try:
-            invoice = InvoiceTransaction.objects.create(
-                booking_id=serializer.validated_data.get("booking_id"),
-                invoice_for=serializer.validated_data["invoice_for"],
-                paid_amount=serializer.validated_data["paid_amount"],
-                payment_method=serializer.validated_data["payment_method"],
-                transaction_type=serializer.validated_data["transaction_type"],
-                remarks=serializer.validated_data.get("remarks", ""),
-                notes=serializer.validated_data.get("notes", ""),
-                due_date=serializer.validated_data.get("due_date"),
-                created_by=request.user,
-            )
+            booking.cancel()
+            booking.invoice.recalculate_totals()
+        except ValidationError as e:
+            return Response({"detail": str(e)}, status=400)
 
-            if serializer.validated_data.get("service_bookings"):
-                invoice.service_bookings.set(
-                    serializer.validated_data["service_bookings"]
-                )
-
-            return Response(
-                InvoiceTransactionSerializer(invoice).data,
-                status=status.HTTP_201_CREATED,
-            )
-        except Exception as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response({"message": "Booking cancelled."})
 
     @action(detail=True, methods=["post"])
-    def mark_as_paid(self, request, pk=None):
-        """
-        Mark an invoice as fully paid.
-        
-        POST /api/invoices/{id}/mark_as_paid/
-        """
-        invoice = self.get_object()
-        
-        if invoice.status == InvoiceTransaction.PaymentStatus.PAID:
-            return Response(
-                {"message": "Invoice is already paid"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+    def cancel_service(self, request, pk=None):
 
-        invoice.status = InvoiceTransaction.PaymentStatus.PAID
-        invoice.save()
+        booking = self.get_object()
+        service_id = request.data.get("service_booking_id")
 
-        return Response(
-            InvoiceTransactionSerializer(invoice).data,
-            status=status.HTTP_200_OK,
+        if not service_id:
+            return Response({"detail": "service_id required"}, status=400)
+
+        service = booking.services.filter(id=service_id).first()
+
+        if not service:
+            return Response({"detail": "Service not found"}, status=404)
+
+        try:
+            service.cancel()
+            booking.invoice.service_bookings.remove(service)
+            booking.invoice.recalculate_totals()
+        except ValidationError as e:
+            return Response({"detail": str(e)}, status=400)
+
+        return Response({"message": "Service cancelled."})
+
+class TotalInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
+
+    filterset_fields = [
+        "status",
+        "patient",
+        "user",
+        "booking",
+    ]
+
+    search_fields = [
+        "patient__first_name",
+        "patient__last_name",
+        "user__first_name",
+        "user__last_name",
+        "booking__id",
+    ]
+
+    ordering_fields = [
+        "user",
+        "patient",
+        "created_at",
+        "updated_at",
+        "total_amount",
+        "paid_amount",
+        "status",
+    ]
+
+    ordering = ["-created_at"]  # default ordering
+
+    serializer_class = TotalInvoiceListSerializer
+    
+    def get_queryset(self):
+
+        queryset = TotalInvoice.objects.select_related(
+            "patient", "user", "booking"
+        ).prefetch_related(
+            Prefetch("payments", queryset=Payment.objects.order_by("-created_at"))
         )
 
-    @action(detail=True, methods=["post"])
-    def cancel(self, request, pk=None):
-        """
-        Cancel an invoice.
-        
-        POST /api/invoices/{id}/cancel/
-        """
-        invoice = self.get_object()
-        
-        if invoice.status == InvoiceTransaction.PaymentStatus.CANCELLED:
-            return Response(
-                {"message": "Invoice is already cancelled"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        user = self.request.user
+        if user.is_customer:
+            queryset = queryset.filter(user=user)
 
-        invoice.status = InvoiceTransaction.PaymentStatus.CANCELLED
-        invoice.save()
-
-        return Response(
-            InvoiceTransactionSerializer(invoice).data,
-            status=status.HTTP_200_OK,
-        )
+        return queryset.order_by("-created_at")
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
         """
-        Get invoice summary and statistics.
-        
-        GET /api/invoices/summary/
-        ?booking_id=1&invoice_for=VENUE&start_date=2026-01-01&end_date=2026-12-31
+        Example:
+        /total-invoices/summary/
+        /total-invoices/summary/?status=PAID
         """
-        queryset = self.get_queryset()
 
-        # Date filters
-        start_date = request.query_params.get("start_date")
-        end_date = request.query_params.get("end_date")
+        # IMPORTANT: use filtered queryset (so filters/search apply)
+        queryset = self.filter_queryset(self.get_queryset())
 
-        if start_date:
-            queryset = queryset.filter(created_at__date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(created_at__date__lte=end_date)
+        today = timezone.now().date()
 
-        payments = queryset.filter(
-            transaction_type=InvoiceTransaction.PaymentType.PAYMENT
-        )
-        refunds = queryset.filter(
-            transaction_type=InvoiceTransaction.PaymentType.REFUND
-        )
-
-        summary = {
+        data = {
             "total_invoices": queryset.count(),
-            "total_bill_amount": queryset.aggregate(
-                total=Sum("total_bill_amount")
-            )["total"]
-            or Decimal("0.00"),
-            "total_paid": payments.aggregate(total=Sum("paid_amount"))[
-                "total"
-            ]
-            or Decimal("0.00"),
-            "total_pending": queryset.filter(
-                status=InvoiceTransaction.PaymentStatus.PENDING
-            ).aggregate(total=Sum("remain_amount"))["total"]
-            or Decimal("0.00"),
-            "total_refunded": refunds.aggregate(total=Sum("paid_amount"))[
-                "total"
-            ]
-            or Decimal("0.00"),
-            "overdue_amount": queryset.filter(
-                due_date__lt=timezone.now().date(),
-                status__in=[
-                    InvoiceTransaction.PaymentStatus.PENDING,
-                    InvoiceTransaction.PaymentStatus.PARTIALLY_PAID,
-                ],
-            ).aggregate(total=Sum("remain_amount"))["total"]
-            or Decimal("0.00"),
-            "by_status": dict(
-                queryset.values("status").annotate(
-                    count=Count("id"),
-                    amount=Sum("total_bill_amount"),
-                )
-                .values_list("status", "count")
-            ),
-            "by_payment_method": dict(
-                payments.values("payment_method").annotate(
-                    count=Count("id"),
-                    amount=Sum("paid_amount"),
-                )
-                .values_list("payment_method", "count")
-            ),
+
+            "total_amount_sum": queryset.aggregate(
+                total=Sum("total_amount")
+            )["total"] or 0,
+
+            "paid_amount_sum": queryset.aggregate(
+                paid=Sum("paid_amount")
+            )["paid"] or 0,
+
+            # Status based counts (adjust status values to your model)
+            "paid_count": queryset.filter(status="PAID").count(),
+
+            "unpaid_count": queryset.filter(status="UNPAID").count(),
+
+            "partial_paid_count": queryset.filter(status="PARTIAL").count(),
+
+            "pending_count": queryset.filter(status="PENDING").count(),
+
+            # Overdue (due_date < today AND not paid)
+            "overdue_count": queryset.filter(
+                Q(due_date__lt=today) & ~Q(status="PAID")
+            ).count(),
         }
 
-        serializer = InvoiceSummarySerializer(summary)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(data)
+
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    serializer_class = PaymentSerializer
+    queryset = Payment.objects.select_related(
+        "invoice",
+        "patient"
+    ).order_by("-created_at")
+
+    # Exact filtering
+    filterset_fields = [
+        "invoice",
+        "patient",
+        "method",
+        "is_verified",
+    ]
+
+    # Search (partial match)
+    search_fields = [
+        "reference",
+        "invoice__invoice_number",
+        "patient__first_name",
+        "patient__last_name",
+    ]
+
+    # Ordering
+    ordering_fields = [
+        "created_at",
+        "amount",
+        "method",
+        "is_verified",
+    ]
+
+    ordering = ["-created_at"]
+    def get_queryset(self):
+        queryset = self.queryset
+
+        user = self.request.user
+        if user.is_customer:
+            queryset = queryset.filter(invoice__user=user)
+
+        return queryset
+
+ 
+    @transaction.atomic
+    def perform_create(self, serializer):
+        """
+        Atomic create so invoice + payment always stay in sync
+        """
+        serializer.save()
+
+    # ---------------- Custom Actions ---------------- #
+
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        """
+        Mark payment as verified
+        POST /payments/{id}/verify/
+        """
+        payment = self.get_object()
+        payment.is_verified = True
+        payment.save(update_fields=["is_verified", "updated_at"])
+
+        return Response({"status": "payment verified"})
 
     @action(detail=False, methods=["get"])
-    def overdue_invoices(self, request):
+    def unverified(self, request):
         """
-        Get all overdue invoices.
-        
-        GET /api/invoices/overdue_invoices/
+        /payments/unverified/
         """
-        today = timezone.now().date()
-        overdue = self.get_queryset().filter(
-            due_date__lt=today,
-            status__in=[
-                InvoiceTransaction.PaymentStatus.PENDING,
-                InvoiceTransaction.PaymentStatus.PARTIALLY_PAID,
-            ],
-        )
-
-        serializer = self.get_serializer(overdue, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=["get"])
-    def payment_history(self, request, pk=None):
-        """
-        Get payment history for a booking.
-        
-        GET /api/invoices/{id}/payment_history/
-        """
-        invoice = self.get_object()
-        
-        history = InvoiceTransaction.objects.filter(
-            booking=invoice.booking,
-            invoice_for=invoice.invoice_for,
-        ).order_by("-created_at")
-
-        serializer = self.get_serializer(history, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
+        qs = Payment.get_unverified_payments()
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)

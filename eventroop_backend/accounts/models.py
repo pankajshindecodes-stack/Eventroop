@@ -134,14 +134,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         VSRE_STAFF = "VSRE_STAFF", "VSRE Staff"
         CUSTOMER = "CUSTOMER", "Customer"
 
-    EMPLOYMENT_CATEGORY = [
-        ("Regular", "Regular"),
-        ("Fulltime", "Fulltime"),
-        ("Parttime", "Parttime"),
-        ("Virtual", "Virtual"),
-        ("PPO", "PPO"),
-        ("Vendor", "Vendor"),
-    ]
+    class EmployeeCategory(models.TextChoices):
+        REGULAR = "REGULAR", "Regular"
+        FULLTIME = "FULLTIME", "Fulltime"
+        PARTTIME = "PARTTIME", "Parttime"
+        TERMINATED = "TERMINATED", "Terminated"
+        VIRTUAL = "VIRTUAL", "Virtual"
+        PPO = "PPO", "PPO"
+        VENDOR = "VENDOR", "Vendor"
+    
 
     GENDER_CHOICES = [
         ("M", "Male"),
@@ -162,7 +163,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
     category = models.CharField(
-        max_length=50, choices=EMPLOYMENT_CATEGORY, null=True, blank=True
+        max_length=50, choices=EmployeeCategory, null=True, blank=True
     )
     user_type = models.CharField(max_length=30, choices=UserTypes.choices)
     address = models.TextField()

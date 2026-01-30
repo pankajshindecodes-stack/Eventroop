@@ -1,6 +1,10 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import *
+from django.utils import timezone
+from .models import (
+    Location, Package, Patient, InvoiceBooking, InvoiceBookingService,
+    TotalInvoice, Payment
+)
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
@@ -20,7 +24,7 @@ class LocationAdmin(admin.ModelAdmin):
 
 @admin.register(Package)
 class PackageAdmin(admin.ModelAdmin):
-    list_display = ('name', 'owner', 'package_type', 'period', 'price', 'is_active')
+    list_display = ('name', 'owner', 'belongs_to', 'package_type', 'period', 'price', 'is_active')
     list_filter = ('package_type', 'period', 'is_active', 'created_at')
     search_fields = ('name', 'owner__email')
     readonly_fields = ('belongs_to','created_at', 'updated_at')
@@ -34,7 +38,7 @@ class PackageAdmin(admin.ModelAdmin):
         }),
         ('Polymorphic Relation', {
             'fields': ('content_type', 'object_id','belongs_to'),
-            'classes': ('collapse',)
+            # 'classes': ('collapse',)
         }),
         ('Metadata', {
             'fields': ('created_at', 'updated_at'),
@@ -42,10 +46,6 @@ class PackageAdmin(admin.ModelAdmin):
         }),
     )
     
-    def get_readonly_fields(self, request, obj=None):
-        if obj:  # Editing existing object
-            return self.readonly_fields + ('content_type', 'object_id')
-        return self.readonly_fields
 
 
 @admin.register(Patient)
@@ -90,10 +90,10 @@ class PatientAdmin(admin.ModelAdmin):
     get_full_name.short_description = 'Full Name'
 
 # -------------------------
-# Inline: Booking Services
+# Inline: InvoiceBookingService
 # -------------------------
-class BookingServiceInline(admin.TabularInline):
-    model = BookingService
+class InvoiceBookingServiceInline(admin.TabularInline):
+    model = InvoiceBookingService
     extra = 0
 
     autocomplete_fields = (
@@ -102,7 +102,7 @@ class BookingServiceInline(admin.TabularInline):
     )
 
     readonly_fields = (
-        "service_total_price",
+        "subtotal",
         "created_at",
         "updated_at",
     )
@@ -113,18 +113,17 @@ class BookingServiceInline(admin.TabularInline):
         "start_datetime",
         "end_datetime",
         "status",
-        "service_total_price",
+        "subtotal",
     )
 
     show_change_link = True
 
 
-
 # -------------------------
-# Booking Admin
+# InvoiceBooking Admin
 # -------------------------
-@admin.register(Booking)
-class BookingAdmin(admin.ModelAdmin):
+@admin.register(InvoiceBooking)
+class InvoiceBookingAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "patient",
@@ -134,8 +133,6 @@ class BookingAdmin(admin.ModelAdmin):
         "start_datetime",
         "end_datetime",
         "subtotal",
-        "discount",
-        "final_amount",
         "booking_state",
         "created_at",
     )
@@ -149,7 +146,8 @@ class BookingAdmin(admin.ModelAdmin):
 
     search_fields = (
         "id",
-        "patient__name",
+        "patient__first_name",
+        "patient__last_name",
         "user__email",
         "venue__name",
     )
@@ -162,10 +160,7 @@ class BookingAdmin(admin.ModelAdmin):
     )
 
     readonly_fields = (
-        "venue_cost",
-        "services_cost",
         "subtotal",
-        "final_amount",
         "created_at",
         "updated_at",
     )
@@ -176,7 +171,6 @@ class BookingAdmin(admin.ModelAdmin):
                 "user",
                 "patient",
                 "status",
-                "continue_booking",
             )
         }),
         ("Venue Booking", {
@@ -185,26 +179,24 @@ class BookingAdmin(admin.ModelAdmin):
                 "venue_package",
                 "start_datetime",
                 "end_datetime",
+                "booking_type",
             )
         }),
         ("Pricing", {
             "fields": (
-                "venue_cost",
-                "services_cost",
                 "subtotal",
-                "discount",
-                "final_amount",
             )
         }),
         ("Timestamps", {
             "fields": (
                 "created_at",
                 "updated_at",
-            )
+            ),
+            "classes": ("collapse",)
         }),
     )
 
-    inlines = [BookingServiceInline]
+    inlines = [InvoiceBookingServiceInline]
 
     date_hierarchy = "created_at"
     ordering = ("-created_at",)
@@ -215,13 +207,14 @@ class BookingAdmin(admin.ModelAdmin):
         instances = formset.save(commit=False)
 
         for instance in instances:
-            if isinstance(instance, BookingService):
+            if isinstance(instance, InvoiceBookingService):
                 instance.patient = form.instance.patient
                 instance.user = form.instance.user
                 instance.booking = form.instance
                 instance.save()
 
         formset.save_m2m()
+
     # -------------------------
     # Custom Display Helpers
     # -------------------------
@@ -262,10 +255,10 @@ class BookingAdmin(admin.ModelAdmin):
 
 
 # -------------------------
-# BookingService Admin
+# InvoiceBookingService Admin
 # -------------------------
-@admin.register(BookingService)
-class BookingServiceAdmin(admin.ModelAdmin):
+@admin.register(InvoiceBookingService)
+class InvoiceBookingServiceAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "service",
@@ -274,7 +267,7 @@ class BookingServiceAdmin(admin.ModelAdmin):
         "status",
         "start_datetime",
         "end_datetime",
-        "service_total_price",
+        "subtotal",
         "created_at",
     )
 
@@ -286,7 +279,8 @@ class BookingServiceAdmin(admin.ModelAdmin):
 
     search_fields = (
         "service__name",
-        "patient__name",
+        "patient__first_name",
+        "patient__last_name",
         "booking__id",
     )
 
@@ -299,67 +293,74 @@ class BookingServiceAdmin(admin.ModelAdmin):
     )
 
     readonly_fields = (
-        "service_total_price",
+        "subtotal",
         "created_at",
         "updated_at",
     )
 
     ordering = ("start_datetime",)
 
-@admin.register(InvoiceTransaction)
-class InvoiceTransactionAdmin(admin.ModelAdmin):
+
+@admin.register(TotalInvoice)
+class TotalInvoiceAdmin(admin.ModelAdmin):
     list_display = (
-        "id",
-        "invoice_for",
-        "booking",
-        "transaction_type",
+        "invoice_number",
+        "patient",
+        "user",
         "status_colored",
-        "total_bill_amount",
+        "total_amount",
         "paid_amount",
-        "remain_amount",
-        "payment_method",
+        "remaining_amount",
         "due_date",
-        "created_at",
+        "issued_date",
     )
 
     list_filter = (
-        "invoice_for",
-        "transaction_type",
         "status",
-        "payment_method",
-        "created_at",
+        "issued_date",
+        "due_date",
     )
 
     search_fields = (
-        "id",
-        "booking__id",
-        "invoice_id",
-        "remarks",
-        "notes",
+        "invoice_number",
+        "patient__first_name",
+        "patient__last_name",
+        "user__email",
     )
 
     readonly_fields = (
-        "total_bill_amount",
-        "remain_amount",
+        "issued_date",
+        "total_amount",
+        "paid_amount",
+        "remaining_amount",
         "created_at",
         "updated_at",
     )
 
     autocomplete_fields = (
         "booking",
-        "service_bookings",
-        "created_by",
+        "patient",
+        "user",
     )
 
     filter_horizontal = ("service_bookings",)
 
     fieldsets = (
         (
-            "Invoice Scope",
+            "Invoice Information",
             {
                 "fields": (
+                    "invoice_number",
+                    "patient",
+                    "user",
                     "booking",
-                    "invoice_for",
+                )
+            },
+        ),
+        (
+            "Services",
+            {
+                "fields": (
                     "service_bookings",
                 )
             },
@@ -368,8 +369,9 @@ class InvoiceTransactionAdmin(admin.ModelAdmin):
             "Billing",
             {
                 "fields": (
-                    "tax",
-                    "total_bill_amount",
+                    "total_amount",
+                    "tax_amount",
+                    "discount_amount",
                 )
             },
         ),
@@ -377,12 +379,11 @@ class InvoiceTransactionAdmin(admin.ModelAdmin):
             "Payment",
             {
                 "fields": (
-                    "transaction_type",
-                    "payment_method",
                     "paid_amount",
-                    "remain_amount",
-                    "invoice_id",
+                    "remaining_amount",
                     "status",
+                    "due_date",
+                    "paid_date",
                 )
             },
         ),
@@ -390,25 +391,27 @@ class InvoiceTransactionAdmin(admin.ModelAdmin):
             "Additional Info",
             {
                 "fields": (
-                    "remarks",
                     "notes",
-                    "due_date",
                 )
             },
         ),
         (
-            "Meta",
+            "Timestamps",
             {
                 "fields": (
-                    "created_by",
+                    "issued_date",
                     "created_at",
                     "updated_at",
-                )
+                ),
+                "classes": ("collapse",)
             },
         ),
     )
 
-    ordering = ("-created_at",)
+    ordering = ("-issued_date",)
+    
+
+    actions = ["recalculate_invoice_totals"]
 
     # --------------------------------------------------
     # Custom display helpers
@@ -417,10 +420,12 @@ class InvoiceTransactionAdmin(admin.ModelAdmin):
     @admin.display(description="Status")
     def status_colored(self, obj):
         color_map = {
-            obj.PaymentStatus.PAID: "green",
-            obj.PaymentStatus.PARTIALLY_PAID: "orange",
-            obj.PaymentStatus.PENDING: "red",
-            obj.PaymentStatus.CANCELLED: "gray",
+            "UNPAID": "red",
+            "PARTIALLY_PAID": "orange",
+            "PAID": "green",
+            "OVERDUE": "darkred",
+            "CANCELLED": "gray",
+            "REFUNDED": "blue",
         }
         color = color_map.get(obj.status, "black")
         return format_html(
@@ -428,3 +433,81 @@ class InvoiceTransactionAdmin(admin.ModelAdmin):
             color,
             obj.get_status_display(),
         )
+
+    @admin.action(description="Recalculate totals for selected invoices")
+    def recalculate_invoice_totals(self, request, queryset):
+        for invoice in queryset:
+            invoice.recalculate_totals()
+        self.message_user(request, "Selected invoices recalculated successfully.")
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "invoice",
+        "patient",
+        "amount",
+        "method",
+        "is_verified",
+        "created_at",
+    )
+
+    list_filter = (
+        "method",
+        "is_verified",
+        "created_at",
+    )
+
+    search_fields = (
+        "invoice__invoice_number",
+        "patient__first_name",
+        "patient__last_name",
+        "reference",
+    )
+
+    autocomplete_fields = (
+        "invoice",
+        "patient",
+    )
+
+    readonly_fields = (
+        "patient",
+        "created_at",
+        "updated_at",
+    )
+
+    fieldsets = (
+        (
+            "Payment Information",
+            {
+                "fields": (
+                    "invoice",
+                    "patient",
+                    "amount",
+                    "method",
+                    "reference",
+                )
+            },
+        ),
+        (
+            "Verification",
+            {
+                "fields": (
+                    "is_verified",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+                "classes": ("collapse",)
+            },
+        ),
+    )
+
+    ordering = ("-created_at",)

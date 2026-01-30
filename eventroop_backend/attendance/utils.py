@@ -6,196 +6,122 @@ from .models import Attendance, AttendanceStatus
 
 
 class AttendanceCalculator:
-    """
-    Single source of truth for:
-    - Attendance period calculation
-    - Attendance aggregation
-    - Attendance reporting
-    """
-
-    HOURS_PER_DAY = Decimal("8")
-    DAYS_PER_WEEK = Decimal("7")
-    DAYS_PER_FORTNIGHT = Decimal("14")
-    DAYS_PER_MONTH = Decimal("30")
 
     def __init__(self, user, base_date=None):
         self.user = user
         self.base_date = base_date or date.today()
-        self.status_codes = self._load_status_codes()
+        self.status = self._load_statuses()
 
-    # --------------------------------------------------
-    # Period calculation (BASED ON PERIOD TYPE)
-    # --------------------------------------------------
-    def _get_period_by_type(self, base_date, period_type):
-        """Calculate period boundaries based on period type and base date."""
-        if period_type in ("HOURLY", "DAILY"):
-            return base_date, base_date
+    # ---------------- Period Helpers ----------------
 
-        if period_type == "WEEKLY":
-            start = base_date - timedelta(days=base_date.weekday())
+    def _get_period(self, base, period):
+        if period in ("HOURLY", "DAILY"):
+            return base, base
+
+        if period == "WEEKLY":
+            start = base - timedelta(days=base.weekday())
             return start, start + timedelta(days=6)
 
-        if period_type == "FORTNIGHTLY":
-            if base_date.day <= 15:
-                return base_date.replace(day=1), base_date.replace(day=15)
-
-            last = calendar.monthrange(base_date.year, base_date.month)[1]
-            return base_date.replace(day=16), base_date.replace(day=last)
+        if period == "FORTNIGHTLY":
+            last = calendar.monthrange(base.year, base.month)[1]
+            return (
+                (base.replace(day=1), base.replace(day=15))
+                if base.day <= 15
+                else (base.replace(day=16), base.replace(day=last))
+            )
 
         # MONTHLY
-        first = base_date.replace(day=1)
-        last = base_date.replace(
-            day=calendar.monthrange(base_date.year, base_date.month)[1]
-        )
-        return first, last
+        first = base.replace(day=1)
+        last = calendar.monthrange(base.year, base.month)[1]
+        return first, base.replace(day=last)
 
-    # --------------------------------------------------
-    # Attendance
-    # --------------------------------------------------
-    def _get_records(self, start_date, end_date):
-        """Get attendance records for a date range."""
-        return Attendance.objects.filter(
-            user=self.user,
-            date__range=(start_date, end_date)
-        )
+    # ---------------- Status ----------------
 
-    def _load_status_codes(self):
-        """Load active attendance status codes."""
+    def _load_statuses(self):
         qs = AttendanceStatus.objects.filter(owner__is_superuser=True, is_active=True)
 
         return {
-            "present": qs.filter(code__icontains="PRESENT").first(),
-            "absent": qs.filter(code__icontains="ABSENT").first(),
-            "paid_leave": qs.filter(code__icontains="PAID_LEAVE").first(),
-            "half_day": qs.filter(code__icontains="HALF_DAY").first(),
-            "weekly_off": qs.filter(code__icontains="WEEKLY_OFF").first(),
-            "unpaid_leave": qs.filter(code__icontains="UNPAID_LEAVE").first(),
+            k: qs.filter(code__icontains=k.upper()).first()
+            for k in [
+                "present",
+                "absent",
+                "paid_leave",
+                "half_day",
+                "weekly_off",
+                "unpaid_leave",
+            ]
         }
 
-    def _calculate_attendance(self, start_date, end_date):
-        """Calculate attendance metrics for a specific date range."""
-        records = self._get_records(start_date, end_date)
+    # ---------------- Core Calculation ----------------
 
-        agg = records.aggregate(
-            present_days=Count("id", filter=Q(status=self.status_codes["present"])),
-            absent_days=Count("id", filter=Q(status=self.status_codes["absent"])),
-            paid_leave_days=Count("id", filter=Q(status=self.status_codes["paid_leave"])),
-            half_day_count=Count("id", filter=Q(status=self.status_codes["half_day"])),
-            weekly_offs=Count("id", filter=Q(status=self.status_codes["weekly_off"])),
-            unpaid_leaves=Count("id", filter=Q(status=self.status_codes["unpaid_leave"])),
-            total_duration=Sum("duration"),
+    def _aggregate(self, start, end):
+        qs = Attendance.objects.filter(
+            user=self.user,
+            date__range=(start, end)
         )
 
-        total_hours = (
-            Decimal(agg["total_duration"].total_seconds()) / Decimal(3600)
-            if agg["total_duration"]
-            else Decimal("0")
+        agg = qs.aggregate(
+            present=Count("id", filter=Q(status=self.status["present"])),
+            absent=Count("id", filter=Q(status=self.status["absent"])),
+            paid_leave=Count("id", filter=Q(status=self.status["paid_leave"])),
+            half_day=Count("id", filter=Q(status=self.status["half_day"])),
+            weekly_off=Count("id", filter=Q(status=self.status["weekly_off"])),
+            unpaid_leave=Count("id", filter=Q(status=self.status["unpaid_leave"])),
+            duration=Sum("duration"),
         )
 
-        payable_days = (
-            agg["present_days"]
-            + agg["paid_leave_days"]
-            + (Decimal("0.5") * agg["half_day_count"])
+        hours = (
+            Decimal(agg["duration"].total_seconds()) / 3600
+            if agg["duration"] else Decimal("0")
         )
+
+        payable_days = agg["present"] + agg["paid_leave"] + Decimal("0.5") * agg["half_day"]
 
         return {
-            **agg,
-            "total_payable_days": payable_days,
-            "total_payable_hours": total_hours,
+            "present_days": agg["present"],
+            "absent_days": agg["absent"],
+            "half_day_count": agg["half_day"],
+            "paid_leave_days": agg["paid_leave"],
+            "weekly_offs": agg["weekly_off"],
+            "unpaid_leaves": agg["unpaid_leave"],
+            "total_payable_days": float(payable_days),
+            "total_payable_hours": float(hours),
         }
 
-    # --------------------------------------------------
-    # PUBLIC API
-    # --------------------------------------------------
+    # ---------------- Public APIs ----------------
+
     def get_attendance_report(self, base_date=None, period_type="MONTHLY"):
-        """
-        Generate attendance report for a single period.
-        
-        Args:
-            base_date: Reference date for period calculation (defaults to today)
-            period_type: Type of period - HOURLY, DAILY, WEEKLY, FORTNIGHTLY, MONTHLY
-            
-        Returns:
-            dict with attendance metrics and period boundaries
-        """
-        base_date = base_date or self.base_date
-        period_start, period_end = self._get_period_by_type(base_date, period_type)
-        
-        attendance = self._calculate_attendance(period_start, period_end)
+        base = base_date or self.base_date
+        start, end = self._get_period(base, period_type)
 
         return {
-            "start_date": period_start,
-            "end_date": period_end,
+            "start_date": start,
+            "end_date": end,
             "period_type": period_type,
-            "present_days": attendance["present_days"],
-            "absent_days": attendance["absent_days"],
-            "half_day_count": attendance["half_day_count"],
-            "paid_leave_days": attendance["paid_leave_days"],
-            "weekly_offs": attendance["weekly_offs"],
-            "unpaid_leaves": attendance["unpaid_leaves"],
-            "total_payable_days": float(attendance["total_payable_days"]),
-            "total_payable_hours": float(attendance["total_payable_hours"]),
+            **self._aggregate(start, end),
         }
 
     def get_all_periods_attendance(self, start_date=None, end_date=None, period_type="MONTHLY"):
-        """
-        Returns attendance reports for all periods in a date range.
-        
-        Args:
-            start_date: Start of range (defaults to user's first attendance)
-            end_date: End of range (defaults to today)
-            period_type: Type of period - HOURLY, DAILY, WEEKLY, FORTNIGHTLY, MONTHLY
-            
-        Returns:
-            list of attendance report dicts
-        """
-        # Determine date range
-        first_attendance = Attendance.objects.filter(user=self.user).order_by("date").first()
-        start_date = start_date or (first_attendance.date if first_attendance else date.today())
+        first = Attendance.objects.filter(user=self.user).order_by("date").first()
+        current = start_date or (first.date if first else date.today())
         end_date = end_date or date.today()
 
         reports = []
-        current_date = start_date
 
-        while current_date <= end_date:
-            # Generate report for this period
-            report = self.get_attendance_report(current_date, period_type)
-            reports.append(report)
+        while current <= end_date:
+            start, end = self._get_period(current, period_type)
+            reports.append(self.get_attendance_report(current, period_type))
 
-            # Move to next period
-            _, period_end = self._get_period_by_type(current_date, period_type)
-
-            if period_type in ("HOURLY", "DAILY", "WEEKLY", "FORTNIGHTLY"):
-                current_date = period_end + timedelta(days=1)
-            else:  # MONTHLY
-                next_month = period_end.replace(day=28) + timedelta(days=4)
-                current_date = next_month.replace(day=1)
+            if period_type == "MONTHLY":
+                current = (end.replace(day=28) + timedelta(days=4)).replace(day=1)
+            else:
+                current = end + timedelta(days=1)
 
         return reports
 
     def get_attendance_for_date_range(self, start_date, end_date):
-        """
-        Get attendance metrics for a custom date range (not aligned to periods).
-        
-        Args:
-            start_date: Start of custom range
-            end_date: End of custom range
-            
-        Returns:
-            dict with attendance metrics
-        """
-        attendance = self._calculate_attendance(start_date, end_date)
-
         return {
             "start_date": start_date,
             "end_date": end_date,
-            "present_days": attendance["present_days"],
-            "absent_days": attendance["absent_days"],
-            "half_day_count": attendance["half_day_count"],
-            "paid_leave_days": attendance["paid_leave_days"],
-            "weekly_offs": attendance["weekly_offs"],
-            "unpaid_leaves": attendance["unpaid_leaves"],
-            "total_payable_days": float(attendance["total_payable_days"]),
-            "total_payable_hours": float(attendance["total_payable_hours"]),
+            **self._aggregate(start_date, end_date),
         }
-

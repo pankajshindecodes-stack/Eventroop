@@ -1,6 +1,9 @@
 
 from django_filters import rest_framework as filters
 from django.db.models import Q
+import django_filters
+from .models import InvoiceBooking
+from django.utils import timezone
 
 class EntityFilter(filters.FilterSet):
     """
@@ -130,3 +133,45 @@ class EntityFilter(filters.FilterSet):
         if hasattr(queryset.model, "capacity"):
             return queryset.filter(capacity__lte=value)
         return queryset
+
+
+class InvoiceBookingFilter(django_filters.FilterSet):
+    is_ongoing = django_filters.BooleanFilter(method="filter_ongoing",label="is_ongoing")
+    is_upcoming = django_filters.BooleanFilter(method="filter_upcoming",label="is_upcoming")
+    is_past_order = django_filters.BooleanFilter(method="filter_past",label="is_past_order")
+
+    class Meta:
+        model = InvoiceBooking
+        fields = [
+            "venue",
+            "services__service",
+            "status",
+            "booking_type",
+        ]
+    @property
+    def qs(self):
+        return super().qs.distinct()
+
+    def filter_ongoing(self, queryset, name, value):
+        if not value:
+            return queryset
+
+        now = timezone.now()
+        return queryset.filter(
+            start_datetime__lte=now,
+            end_datetime__gte=now,
+        )
+
+    def filter_upcoming(self, queryset, name, value):
+        if not value:
+            return queryset
+
+        now = timezone.now()
+        return queryset.filter(start_datetime__gt=now)
+
+    def filter_past(self, queryset, name, value):
+        if not value:
+            return queryset
+
+        now = timezone.now()
+        return queryset.filter(end_datetime__lt=now)

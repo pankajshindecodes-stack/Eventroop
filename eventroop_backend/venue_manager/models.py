@@ -154,7 +154,8 @@ class Service(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.name} ({self.owner})"
+        return f"{self.name} ({self.id})"
+
     
     class Meta:
         indexes = [

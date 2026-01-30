@@ -74,6 +74,8 @@ class SalaryCalculator:
     def _calculate_salary(self, salary_obj, salary_type, payable_days):
         """Calculate salary for a period with a specific salary structure."""
         daily_rate = self._daily_rate(salary_obj, salary_type).quantize(Decimal("0.01"))
+        if payable_days==31:
+            payable_days-=1
         current_payment = (daily_rate * Decimal(str(payable_days))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
