@@ -429,7 +429,7 @@ class InvoiceBooking(models.Model):
                 updated_at=timezone.now(),
                 subtotal=0
             )
-
+ 
 class InvoiceBookingService(models.Model): 
     booking = models.ForeignKey(
         InvoiceBooking,
