@@ -13,12 +13,13 @@ class EmailMobileAuthBackend(ModelBackend):
                 Q(email=username) | Q(mobile_number=username)
             ).first()
 
-            
-            if user.category != CustomUser.EmployeeCategory.TERMINATED:
-                return None
-                
-            if user and user.check_password(password) and self.user_can_authenticate(user):
-                return user
+            if all((
+                user,
+                user.category != CustomUser.EmployeeCategory.TERMINATED,
+                user.check_password(password),
+                self.user_can_authenticate(user))
+            ):return user
+                            
         except CustomUser.DoesNotExist:
             return None
         return None
