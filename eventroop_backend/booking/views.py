@@ -270,8 +270,14 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
 
 
     search_fields = ['patient__first_name','patient__last_name', 'booking_entity', 'status']  
-    filterset_fields = ['booking_entity', 'status']  
-    ordering_fields = ['created_at', 'start_datetime', 'status']
+    filterset_fields = {
+        'start_datetime': ['month'],
+        'end_datetime': ['month'],
+        'booking_type': ['exact'],
+        'status': ['exact'],
+    }
+
+    ordering_fields = ['user','patient','created_at', 'start_datetime', 'end_datetime']
     ordering = ['-created_at']
     
     def get_queryset(self):

@@ -1,7 +1,6 @@
 from django.db import models
 from django.utils import timezone
 from accounts.models import CustomUser
-from datetime import timedelta
 from decimal import Decimal
 from django.core.validators import MinValueValidator
 
