@@ -1,10 +1,10 @@
 from django.contrib import admin
-from django.utils.html import format_html
-from django.utils import timezone
+from django.db.models import Sum
 from .models import (
-    Location, Package, Patient, InvoiceBooking, InvoiceBookingService,
+    Location, Package, Patient, InvoiceBooking, 
     TotalInvoice, Payment
 )
+
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
@@ -89,425 +89,125 @@ class PatientAdmin(admin.ModelAdmin):
         return obj.get_full_name()
     get_full_name.short_description = 'Full Name'
 
-# -------------------------
-# Inline: InvoiceBookingService
-# -------------------------
-class InvoiceBookingServiceInline(admin.TabularInline):
-    model = InvoiceBookingService
+
+
+# Payments Inline (inside Invoice)
+class PaymentInline(admin.TabularInline):
+    model = Payment
     extra = 0
+    readonly_fields = ("created_at",)
 
-    autocomplete_fields = (
-        "service",
-        "service_package",
-    )
 
-    readonly_fields = (
-        "subtotal",
-        "created_at",
-        "updated_at",
-    )
+# Monthly Invoice Admin
 
-    fields = (
-        "service",
-        "service_package",
-        "start_datetime",
-        "end_datetime",
+@admin.register(TotalInvoice)
+class TotalInvoiceAdmin(admin.ModelAdmin):
+
+    list_display = (
+        "invoice_number",
+        "booking",
+        "period_start",
+        "period_end",
+        "total_amount",
+        "paid_amount",
+        "remaining_amount",
         "status",
-        "subtotal",
     )
 
+    list_filter = ("status", "period_start")
+
+    search_fields = ("invoice_number",)
+
+    readonly_fields = ("paid_amount", "remaining_amount")
+
+    inlines = [PaymentInline]
+
+    def save_model(self, request, obj, form, change):
+        """
+        Auto recalc paid + remaining whenever admin saves.
+        """
+        super().save_model(request, obj, form, change)
+
+        payments = obj.payments.aggregate(total=Sum("amount"))["total"] or 0
+
+        obj.paid_amount = payments
+        obj.remaining_amount = obj.total_amount - payments
+
+        if obj.remaining_amount <= 0:
+            obj.status = "PAID"
+
+        obj.save(update_fields=["paid_amount", "remaining_amount", "status"])
+
+
+
+# Booking Inline (services under venue)
+
+
+class ServiceBookingInline(admin.TabularInline):
+    model = InvoiceBooking
+    fk_name = "parent"
+    extra = 0
     show_change_link = True
 
 
-# -------------------------
+
 # InvoiceBooking Admin
-# -------------------------
+
+
 @admin.register(InvoiceBooking)
 class InvoiceBookingAdmin(admin.ModelAdmin):
+
     list_display = (
         "id",
-        "patient",
+        "booking_entity",
         "user",
         "venue",
-        "status_badge",
+        "service",
         "start_datetime",
         "end_datetime",
         "subtotal",
-        "booking_state",
-        "created_at",
-    )
-
-    list_filter = (
         "status",
-        "venue",
-        "created_at",
-        "start_datetime",
     )
 
-    search_fields = (
-        "id",
-        "patient__first_name",
-        "patient__last_name",
-        "user__email",
-        "venue__name",
-    )
+    list_filter = ("booking_entity", "status")
 
-    autocomplete_fields = (
-        "user",
-        "patient",
-        "venue",
-        "venue_package",
-    )
+    search_fields = ("id",)
 
-    readonly_fields = (
-        "subtotal",
-        "created_at",
-        "updated_at",
-    )
+    inlines = [ServiceBookingInline]
+
+    readonly_fields = ("subtotal",)
 
     fieldsets = (
-        ("Basic Info", {
+        ("Core", {
             "fields": (
+                "booking_entity",
+                "parent",
                 "user",
                 "patient",
                 "status",
             )
         }),
-        ("Venue Booking", {
+        ("Entities", {
             "fields": (
                 "venue",
-                "venue_package",
+                "service",
+                "package",
+            )
+        }),
+        ("Period", {
+            "fields": (
                 "start_datetime",
                 "end_datetime",
-                "booking_type",
             )
         }),
-        ("Pricing", {
-            "fields": (
-                "subtotal",
-            )
-        }),
-        ("Timestamps", {
-            "fields": (
-                "created_at",
-                "updated_at",
-            ),
-            "classes": ("collapse",)
+        ("Financial", {
+            "fields": ("subtotal",),
         }),
     )
 
-    inlines = [InvoiceBookingServiceInline]
-
-    date_hierarchy = "created_at"
-    ordering = ("-created_at",)
-
-    actions = ["recalculate_selected_bookings"]
-    
-    def save_formset(self, request, form, formset, change):
-        instances = formset.save(commit=False)
-
-        for instance in instances:
-            if isinstance(instance, InvoiceBookingService):
-                instance.patient = form.instance.patient
-                instance.user = form.instance.user
-                instance.booking = form.instance
-                instance.save()
-
-        formset.save_m2m()
-
-    # -------------------------
-    # Custom Display Helpers
-    # -------------------------
-    def status_badge(self, obj):
-        color_map = {
-            "DRAFT": "gray",
-            "BOOKED": "blue",
-            "IN_PROGRESS": "orange",
-            "FULFILLED": "green",
-            "CANCELLED": "red",
-            "DELAYED": "purple",
-        }
-        color = color_map.get(obj.status, "black")
-        return format_html(
-            '<b style="color:{};">{}</b>',
-            color,
-            obj.get_status_display(),
-        )
-    status_badge.short_description = "Status"
-
-    def booking_state(self, obj):
-        now = timezone.now()
-        if obj.is_ongoing:
-            return format_html('<span style="color:orange;">Ongoing</span>')
-        if obj.is_upcoming:
-            return format_html('<span style="color:blue;">Upcoming</span>')
-        return format_html('<span style="color:green;">Completed</span>')
-    booking_state.short_description = "State"
-
-    # -------------------------
-    # Admin Actions
-    # -------------------------
-    @admin.action(description="Recalculate totals for selected bookings")
-    def recalculate_selected_bookings(self, request, queryset):
-        for booking in queryset:
-            booking.save()
-        self.message_user(request, "Selected bookings recalculated successfully.")
-
-
-# -------------------------
-# InvoiceBookingService Admin
-# -------------------------
-@admin.register(InvoiceBookingService)
-class InvoiceBookingServiceAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "service",
-        "booking",
-        "patient",
-        "status",
-        "start_datetime",
-        "end_datetime",
-        "subtotal",
-        "created_at",
-    )
-
-    list_filter = (
-        "status",
-        "service",
-        "created_at",
-    )
-
-    search_fields = (
-        "service__name",
-        "patient__first_name",
-        "patient__last_name",
-        "booking__id",
-    )
-
-    autocomplete_fields = (
-        "booking",
-        "service",
-        "service_package",
-        "patient",
-        "user",
-    )
-
-    readonly_fields = (
-        "subtotal",
-        "created_at",
-        "updated_at",
-    )
-
-    ordering = ("start_datetime",)
-
-
-@admin.register(TotalInvoice)
-class TotalInvoiceAdmin(admin.ModelAdmin):
-    list_display = (
-        "invoice_number",
-        "patient",
-        "user",
-        "status_colored",
-        "total_amount",
-        "paid_amount",
-        "remaining_amount",
-        "due_date",
-        "issued_date",
-    )
-
-    list_filter = (
-        "status",
-        "issued_date",
-        "due_date",
-    )
-
-    search_fields = (
-        "invoice_number",
-        "patient__first_name",
-        "patient__last_name",
-        "user__email",
-    )
-
-    readonly_fields = (
-        "issued_date",
-        "total_amount",
-        "paid_amount",
-        "remaining_amount",
-        "created_at",
-        "updated_at",
-    )
-
-    autocomplete_fields = (
-        "booking",
-        "patient",
-        "user",
-    )
-
-    filter_horizontal = ("service_bookings",)
-
-    fieldsets = (
-        (
-            "Invoice Information",
-            {
-                "fields": (
-                    "invoice_number",
-                    "patient",
-                    "user",
-                    "booking",
-                )
-            },
-        ),
-        (
-            "Services",
-            {
-                "fields": (
-                    "service_bookings",
-                )
-            },
-        ),
-        (
-            "Billing",
-            {
-                "fields": (
-                    "total_amount",
-                    "tax_amount",
-                    "discount_amount",
-                )
-            },
-        ),
-        (
-            "Payment",
-            {
-                "fields": (
-                    "paid_amount",
-                    "remaining_amount",
-                    "status",
-                    "due_date",
-                    "paid_date",
-                )
-            },
-        ),
-        (
-            "Additional Info",
-            {
-                "fields": (
-                    "notes",
-                )
-            },
-        ),
-        (
-            "Timestamps",
-            {
-                "fields": (
-                    "issued_date",
-                    "created_at",
-                    "updated_at",
-                ),
-                "classes": ("collapse",)
-            },
-        ),
-    )
-
-    ordering = ("-issued_date",)
-    
-
-    actions = ["recalculate_invoice_totals"]
-
-    # --------------------------------------------------
-    # Custom display helpers
-    # --------------------------------------------------
-
-    @admin.display(description="Status")
-    def status_colored(self, obj):
-        color_map = {
-            "UNPAID": "red",
-            "PARTIALLY_PAID": "orange",
-            "PAID": "green",
-            "OVERDUE": "darkred",
-            "CANCELLED": "gray",
-            "REFUNDED": "blue",
-        }
-        color = color_map.get(obj.status, "black")
-        return format_html(
-            '<b style="color:{};">{}</b>',
-            color,
-            obj.get_status_display(),
-        )
-
-    @admin.action(description="Recalculate totals for selected invoices")
-    def recalculate_invoice_totals(self, request, queryset):
-        for invoice in queryset:
-            invoice.recalculate_totals()
-        self.message_user(request, "Selected invoices recalculated successfully.")
-
-
-@admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "invoice",
-        "patient",
-        "amount",
-        "method",
-        "is_verified",
-        "created_at",
-    )
-
-    list_filter = (
-        "method",
-        "is_verified",
-        "created_at",
-    )
-
-    search_fields = (
-        "invoice__invoice_number",
-        "patient__first_name",
-        "patient__last_name",
-        "reference",
-    )
-
-    autocomplete_fields = (
-        "invoice",
-        "patient",
-    )
-
-    readonly_fields = (
-        "patient",
-        "created_at",
-        "updated_at",
-    )
-
-    fieldsets = (
-        (
-            "Payment Information",
-            {
-                "fields": (
-                    "invoice",
-                    "patient",
-                    "amount",
-                    "method",
-                    "reference",
-                )
-            },
-        ),
-        (
-            "Verification",
-            {
-                "fields": (
-                    "is_verified",
-                )
-            },
-        ),
-        (
-            "Timestamps",
-            {
-                "fields": (
-                    "created_at",
-                    "updated_at",
-                ),
-                "classes": ("collapse",)
-            },
-        ),
-    )
-
-    ordering = ("-created_at",)
+    def get_queryset(self, request):
+        """
+        Only show parent bookings by default.
+        """
+        qs = super().get_queryset(request)
+        return qs.filter(parent__isnull=True)

@@ -1,7 +1,13 @@
 from rest_framework import serializers
-from venue_manager.models import Venue
+from decimal import Decimal
+from django.utils import timezone
+from datetime import timedelta, datetime
+from accounts.models import CustomUser
+from venue_manager.models import Venue, Service
+from django.db import transaction
 from .models import *
-
+from .utils import calculate_package_cost
+from .constants import *
 
 class LocationSerializer(serializers.ModelSerializer):
     full_address = serializers.SerializerMethodField(read_only=True)
@@ -45,7 +51,7 @@ class PatientSerializer(serializers.ModelSerializer):
             "name_registered_by",
             "registered_by",
             "registration_date",
-            "updated_at",
+            
         ]
 
 class PatientMiniSerializer(serializers.ModelSerializer):
@@ -83,14 +89,10 @@ class PackageSerializer(serializers.ModelSerializer):
             "object_id",
             "belongs_to_type",
             "belongs_to_detail",
-            "created_at",
-            "updated_at",
         ]
 
         read_only_fields = [
             "id",
-            "created_at",
-            "updated_at",
             "owner",
             "owner_name",
         ]
@@ -116,133 +118,286 @@ class PackageListSerializer(serializers.ModelSerializer):
     belongs_to_type = serializers.CharField(source='content_type.model',read_only=True)
     belong_to = serializers.CharField(source='belongs_to',read_only=True)
 
-
     class Meta:
         model = Package
         fields = ["id", "name", "price", "is_active","package_type", "belong_to","belongs_to_type"]
 
-class InvoiceBookingServiceSerializer(serializers.ModelSerializer):
-    service_name = serializers.CharField(source="service.name", read_only=True)
-    service_package_name = serializers.CharField(
-        source="service_package.name", read_only=True
-    )
-
-    class Meta:
-        model = InvoiceBookingService
-        fields = [
-            "id",
-            "service_id",
-            "service_name",
-            "service_package_id",
-            "service_package_name",
-            "start_datetime",
-            "end_datetime",
-            "status",
-            "booking_type",
-        ]
-
-        read_only_fields = ["subtotal"]
-
-class InvoiceBookingSerializer(serializers.ModelSerializer):
-    # Read-only nested
-    patient = PatientMiniSerializer(read_only=True)
-    user_id = serializers.IntegerField(source="user.id", read_only=True)
-    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
-    venue_name = serializers.CharField(source="venue.name", read_only=True)
-    package_name = serializers.CharField(source="venue_package.name", read_only=True)
-    services = InvoiceBookingServiceSerializer(many=True, read_only=True)
-
-    # Writeable fields
-    patient_id = serializers.PrimaryKeyRelatedField(
-        queryset=Patient.objects.all(),
-        source="patient",
-        write_only=True,
-    )
-    venue_id = serializers.PrimaryKeyRelatedField(
-        queryset=Venue.objects.all(),
-        source="venue",
-        write_only=True,
-    )
-    venue_package_id = serializers.PrimaryKeyRelatedField(
-        queryset=Package.objects.all(),
-        source="venue_package",
-        write_only=True,
-    )
-
-    class Meta:
-        model = InvoiceBooking
-        fields = [
-            "id",
-            "user_id",
-            "user_name",
-            "venue_id",
-            "venue_name",
-            "venue_package_id",
-            "package_name",
-            "start_datetime",
-            "end_datetime",
-            "status",
-            "booking_type",
-            "patient_id",
-            "patient",
-            "services",
-        ]
-        read_only_fields = ["subtotal"]
-
-class BookServiceSerializer(serializers.Serializer):
-    service_id = serializers.IntegerField()
-    service_package_id = serializers.IntegerField()
-    start_datetime = serializers.DateTimeField()
-    end_datetime = serializers.DateTimeField()
-    booking_type = serializers.CharField(required=False, allow_null=True)
-    invoice_booking_id = serializers.IntegerField(required=False, allow_null=True)
-
-    def validate(self, data):
-        if data["start_datetime"] >= data["end_datetime"]:
-            raise serializers.ValidationError(
-                "start_datetime must be before end_datetime"
-            )
-        return data
 
 class PaymentSerializer(serializers.ModelSerializer):
-
+    """Serializer for Payment model"""
+    
     class Meta:
         model = Payment
         fields = [
             'id',
-            'invoice',
             'amount',
             'method',
             'reference',
             'is_verified',
-            'created_at',
-            
+            'created_at'
         ]
-        read_only_fields = [
-            "patient",
-            "is_verified",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ['id', 'reference', 'created_at']
 
-class TotalInvoiceListSerializer(serializers.ModelSerializer):
-    payments = PaymentSerializer(many=True, read_only=True)
-    patient_name = serializers.CharField(source="patient.get_full_name", read_only=True)
-    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
+
+class NestedInvoiceBookingSerializer(serializers.ModelSerializer):
+    """Nested serializer for child InvoiceBooking entries"""
     
+    class Meta:
+        model = InvoiceBooking
+        fields = [
+            'id',
+            'booking_entity',
+            'service',
+            'subtotal',
+            'booking_type',
+            'status',
+            'start_datetime',
+            'end_datetime',
+        ]
+        read_only_fields = ['id', 'subtotal']
+
+
+class InvoiceBookingSerializer(serializers.ModelSerializer):
+    """Serializer for InvoiceBooking model with nested children"""
+    
+    children = NestedInvoiceBookingSerializer(
+        many=True,
+        read_only=True
+    )
+    venue_name = serializers.CharField(
+        source='venue.name',
+        read_only=True,
+        allow_null=True
+    )
+    service_name = serializers.CharField(
+        source='service.name',
+        read_only=True,
+        allow_null=True
+    )
+    package_name = serializers.CharField(
+        source='package.name',
+        read_only=True,
+        allow_null=True
+    )
+    patient = PatientMiniSerializer(read_only=True)
+
+    user_email = serializers.CharField(
+        source='user.email',
+        read_only=True
+    )
+
+    
+    class Meta:
+        model = InvoiceBooking
+        fields = [
+            'id',
+            'booking_entity',
+            'booking_type',
+            'status',
+            'patient',
+            'user',
+            'user_email',
+            'venue',
+            'venue_name',
+            'service',
+            'service_name',
+            'package',
+            'package_name',
+            'subtotal',
+            'start_datetime',
+            'end_datetime',
+            'children',
+        ]
+        read_only_fields = ['id', 'subtotal']
+    
+    def validate(self, data):
+        """Validate booking entity and required fields"""
+        booking_entity = data.get('booking_entity')
+        
+        if booking_entity == 'VENUE' and not data.get('venue'):
+            raise serializers.ValidationError(
+                "Venue booking requires a venue to be specified."
+            )
+        
+        if booking_entity == 'SERVICE' and not data.get('service'):
+            raise serializers.ValidationError(
+                "Service booking requires a service to be specified."
+            )
+        
+        # Validate datetime range
+        if data.get('start_datetime') and data.get('end_datetime'):
+            if data['start_datetime'] >= data['end_datetime']:
+                raise serializers.ValidationError(
+                    "Start datetime must be before end datetime."
+                )
+        
+        return data
+
+class TotalInvoiceSerializer(serializers.ModelSerializer):
+    """
+        Unified serializer for both list and detail views
+    """
+
+    payments = PaymentSerializer(
+        many=True,
+        read_only=True
+    )
+
+    patient_name = serializers.CharField(
+        source="patient.name",
+        read_only=True
+    )
+
+    user_email = serializers.CharField(
+        source="user.email",
+        read_only=True
+    )
+
+    venue_name = serializers.CharField(
+        source="booking.venue.name",
+        read_only=True,
+        allow_null=True
+    )
+
     class Meta:
         model = TotalInvoice
         fields = [
+            # core
             "id",
             "invoice_number",
+            "status",
+
+            # relations
+            "booking",
             "patient",
-            "user_name",
             "patient_name",
+            "user",
+            "user_email",
+            "venue_name",
+
+            # period
+            "period_start",
+            "period_end",
+
+            # amounts
             "total_amount",
             "paid_amount",
             "remaining_amount",
-            "status",
+            "discount_amount",
+            "tax_amount",
+
+            # dates
+            "issued_date",
             "due_date",
-            "created_at",
+            "paid_date",
+
+            # nested
             "payments",
         ]
+
+        read_only_fields = [
+            "id",
+            "invoice_number",
+            "total_amount",
+            "remaining_amount",
+            "paid_amount",
+            "issued_date",
+        ]
+
+    def validate_discount_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError(
+                "Discount amount cannot be negative."
+            )
+        return value
+
+    def validate_tax_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError(
+                "Tax amount cannot be negative."
+            )
+        return value
+
+
+class PaymentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating payments"""
+    
+    class Meta:
+        model = Payment
+        fields = [
+            'amount',
+            'method',
+            'reference',
+            'is_verified'
+        ]
+    
+    def validate_amount(self, value):
+        """Validate payment amount is positive"""
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Payment amount must be greater than zero."
+            )
+        return value
+
+
+class InvoiceBookingCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating new invoice bookings"""
+    
+    class Meta:
+        model = InvoiceBooking
+        fields = [
+            'parent',
+            'booking_entity',
+            'user',
+            'patient',
+            'venue',
+            'service',
+            'package',
+            'start_datetime',
+            'end_datetime',
+            'booking_type'
+        ]
+    
+    def validate(self, data):
+        """Validate booking entity and required fields"""
+        booking_entity = data.get('booking_entity')
+        
+        if booking_entity == 'VENUE' and not data.get('venue'):
+            raise serializers.ValidationError(
+                {"venue": "Venue booking requires a venue to be specified."}
+            )
+        
+        if booking_entity == 'SERVICE' and not data.get('service'):
+            raise serializers.ValidationError(
+                {"service": "Service booking requires a service to be specified."}
+            )
+        
+        # Validate datetime range
+        if data.get('start_datetime') and data.get('end_datetime'):
+            if data['start_datetime'] >= data['end_datetime']:
+                raise serializers.ValidationError(
+                    {"start_datetime": "Start datetime must be before end datetime."}
+                )
+        
+        return data
+
+
+class InvoiceSummarySerializer(serializers.Serializer):
+    """Serializer for invoice summary/statistics"""
+    
+    total_invoices = serializers.IntegerField()
+    total_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+    paid_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+    remaining_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+    unpaid_count = serializers.IntegerField()
+    partially_paid_count = serializers.IntegerField()
+    paid_count = serializers.IntegerField()
