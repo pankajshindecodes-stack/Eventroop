@@ -141,13 +141,18 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 class NestedInvoiceBookingSerializer(serializers.ModelSerializer):
     """Nested serializer for child InvoiceBooking entries"""
-    
+    service_name = serializers.CharField(
+        source='service.name',
+        read_only=True,
+        allow_null=True
+    )
     class Meta:
         model = InvoiceBooking
         fields = [
             'id',
             'booking_entity',
             'service',
+            'service_name',
             'subtotal',
             'booking_type',
             'status',
