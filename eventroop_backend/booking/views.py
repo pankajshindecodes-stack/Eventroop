@@ -402,7 +402,25 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         return Response({"message":"Booked successfully"}, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
-    def cancel(self, request, pk=None):
+    def cancel_venue(self, request, pk=None):
+        """
+        Cancel a booking and all its child bookings.
+        Sets status to CANCELLED and subtotal to 0.
+        """
+        booking = self.get_object()
+        
+        if booking.status == 'CANCELLED':
+            return Response(
+                {'message': 'Booking is already cancelled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        booking.cancel()
+        
+        serializer = InvoiceBookingSerializer(booking)
+        return Response(serializer.data)
+    @action(detail=True, methods=['post'])
+    def cancel_venue(self, request, pk=None):
         """
         Cancel a booking and all its child bookings.
         Sets status to CANCELLED and subtotal to 0.
@@ -420,6 +438,44 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         serializer = InvoiceBookingSerializer(booking)
         return Response(serializer.data)
     
+    @action(detail=True, methods=['post'])
+    def cancel_venue(self, request, pk=None):
+        """
+        Cancel a booking and all its child bookings.
+        Sets status to CANCELLED and subtotal to 0.
+        """
+        booking = self.get_object()
+        
+        if booking.status == 'CANCELLED':
+            return Response(
+                {'message': 'Booking is already cancelled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        booking.cancel()
+        return Response({'message': 'Booking is cancelled Successfully'})
+    
+    @action(detail=True, methods=['post'])
+    def cancel_service(self, request, pk=None):
+        """
+        Cancel a booking and all its child bookings.
+        Sets status to CANCELLED and subtotal to 0.
+        payload:
+        {
+            "service_id":22
+        }
+        """
+        booking = self.get_object()
+        
+        if booking.status == 'CANCELLED':
+            return Response(
+                {'message': 'Booking is already cancelled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        child_booking = booking.children.get(id=request.data.get('service_id'))
+        child_booking.cancel()
+        
+        return Response({'message': 'Booking is cancelled Successfully'})
+        
     @action(detail=False, methods=['get'])
     def by_venue(self, request):
         """Get all venue bookings grouped with their services"""
@@ -434,8 +490,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
     def standalone_services(self, request):
         """Get all standalone service bookings (those without parent)"""
         service_bookings = self.get_queryset().filter(
-            booking_entity='SERVICE',
-            parent__isnull=True
+            booking_entity='SERVICE'
         )
         
         serializer = InvoiceBookingSerializer(service_bookings, many=True)

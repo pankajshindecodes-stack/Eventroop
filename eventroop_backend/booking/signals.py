@@ -54,30 +54,6 @@ def auto_create_monthly_invoices(sender, instance, created, **kwargs):
             invoice.recalculate_totals()
 
 
-@receiver(post_delete, sender=InvoiceBooking)
-def handle_booking_deletion(sender, instance, **kwargs):
-    """
-    When a booking is deleted, recalculate parent invoices if it was a child.
-    """
-    if instance.parent:
-        parent_invoices = TotalInvoice.objects.filter(booking=instance.parent)
-        for invoice in parent_invoices:
-            invoice.recalculate_totals()
-
-
-# @receiver(post_save, sender=TotalInvoice)
-# def auto_set_due_date_if_not_set(sender, instance, created, **kwargs):
-#     """
-#     Automatically set due_date when invoice is created.
-#     Due date defaults to last day of invoice period.
-#     """
-#     if created and not instance.due_date:
-#         # Set due date to last day of period_end month
-#         due_date = (instance.period_end.replace(day=1) - timedelta(days=1)).date()
-#         instance.due_date = due_date
-#         instance.save(update_fields=['due_date'])
-
-
 @receiver(post_save, sender=Payment)
 def update_invoice_on_payment(sender, instance, created, **kwargs):
     """
