@@ -514,9 +514,23 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
     """
     serializer_class = TotalInvoiceSerializer
     search_fields = ['invoice_number', 'patient__first_name','patient__last_name', 'status']
-    filterset_fields = ['patient__first_name','patient__last_name', 'status']  
+    filterset_fields = {
+        'period_start': ['month'],
+        'period_end': ['month'],
+        'booking__booking_type': ['exact'],
+        'status': ['exact'],
+    }
 
-    ordering_fields = ['created_at', 'issued_date', 'status', 'total_amount']
+    ordering_fields = [
+        'user',
+        'patient',
+        'created_at',
+        'period_start',
+        'period_end',
+        'created_at',
+        'issued_date',
+        'status', 'total_amount'
+    ]
     ordering = ['-created_at']
     
     def get_queryset(self):
