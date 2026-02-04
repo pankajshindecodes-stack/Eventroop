@@ -277,7 +277,9 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Get bookings filtered by user and optional parameters"""
         user=self.request.user
-        queryset = InvoiceBooking.objects.select_related(
+        queryset = InvoiceBooking.objects.filter(
+            parent__isnull=True
+        ).select_related(
             'patient',
             'venue',
             'service',
@@ -324,6 +326,9 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         
         # Automatically set user to current authenticated user
         serializer.validated_data['user'] = request.user
+        serializer.validated_data['status'] = BookingStatus.BOOKED
+        serializer.validated_data['booking_type'] = BookingType.IN_HOUSE
+        serializer.validated_data['booking_entity'] = BookingEntity.VENUE
         
         serializer.save()
         
@@ -338,7 +343,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         Payload:
             {
                 "service_id": null,
-                "service_pkg_id": null,
+                "pkg_id": null,
                 "start_datetime": null,
                 "end_datetime": null
             }
@@ -353,7 +358,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             )
         
         service_id = request.data.get('service_id')
-        service_pkg_id = request.data.get('service_pkg_id')
+        service_pkg_id = request.data.get('pkg_id')
         start_datetime = request.data.get('start_datetime')
         end_datetime = request.data.get('end_datetime')
         
@@ -380,7 +385,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             )
         
         # Create child booking
-        child_booking = InvoiceBooking.objects.create(
+        InvoiceBooking.objects.create(
             parent=parent_booking,
             booking_entity='SERVICE',
             user=request.user,
@@ -389,11 +394,12 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             package=package,
             start_datetime=start_datetime,
             end_datetime=end_datetime,
-            booking_type=parent_booking.booking_type
+            booking_type=BookingType.OPD,
+            status=BookingStatus.BOOKED
         )
         
-        serializer = InvoiceBookingSerializer(child_booking)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        return Response({"message":"Booked successfully"}, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):

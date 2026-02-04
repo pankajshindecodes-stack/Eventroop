@@ -249,12 +249,12 @@ class TotalInvoiceSerializer(serializers.ModelSerializer):
     )
 
     patient_name = serializers.CharField(
-        source="patient.name",
+        source="patient.get_full_name",
         read_only=True
     )
 
-    user_email = serializers.CharField(
-        source="user.email",
+    user_name = serializers.CharField(
+        source="user.get_full_name",
         read_only=True
     )
 
@@ -277,7 +277,7 @@ class TotalInvoiceSerializer(serializers.ModelSerializer):
             "patient",
             "patient_name",
             "user",
-            "user_email",
+            "user_name",
             "venue_name",
 
             # period
@@ -351,31 +351,18 @@ class InvoiceBookingCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = InvoiceBooking
         fields = [
-            'parent',
-            'booking_entity',
-            'user',
             'patient',
             'venue',
-            'service',
             'package',
             'start_datetime',
             'end_datetime',
-            'booking_type'
         ]
+        extra_kwargs = {
+            "venue": {"required": True},
+        }
     
     def validate(self, data):
         """Validate booking entity and required fields"""
-        booking_entity = data.get('booking_entity')
-        
-        if booking_entity == 'VENUE' and not data.get('venue'):
-            raise serializers.ValidationError(
-                {"venue": "Venue booking requires a venue to be specified."}
-            )
-        
-        if booking_entity == 'SERVICE' and not data.get('service'):
-            raise serializers.ValidationError(
-                {"service": "Service booking requires a service to be specified."}
-            )
         
         # Validate datetime range
         if data.get('start_datetime') and data.get('end_datetime'):
