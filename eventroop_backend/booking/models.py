@@ -175,7 +175,7 @@ class Patient(models.Model):
     email = models.EmailField(null=True, blank=True)
     
     # Contact Information
-    phone = models.CharField(max_length=10, validators=[phone_regex])
+    phone = models.CharField(max_length=10, validators=[phone_regex],unique=True)
     address = models.TextField()
     age = models.PositiveIntegerField(
         null=True,

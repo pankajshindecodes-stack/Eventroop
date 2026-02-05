@@ -288,7 +288,6 @@ class TotalInvoiceSerializer(serializers.ModelSerializer):
             "total_amount",
             "paid_amount",
             "remaining_amount",
-            "discount_amount",
             "tax_amount",
 
             # dates
