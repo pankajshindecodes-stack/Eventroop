@@ -347,64 +347,26 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         
         Only works for VENUE type parent bookings.
         Payload:
-            {
-                "service_id": null,
-                "pkg_id": null,
-                "start_datetime": null,
-                "end_datetime": null
-            }
+        {
+            "service": 5,
+            "package": 2,
+            "start_datetime": "2026-02-05T10:00:00Z",
+            "end_datetime": "2026-02-05T11:00:00Z",
+            "discount_amount": "100.00",
+            "premium_amount": "50.00"
+        }
+
         """
-        parent_booking = self.get_object()
         
-        # Validate parent is a venue booking
-        if parent_booking.booking_entity != 'VENUE':
-            return Response(
-                {'error': 'Can only add services to VENUE type bookings'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        service_id = request.data.get('service_id')
-        service_pkg_id = request.data.get('pkg_id')
-        start_datetime = request.data.get('start_datetime')
-        end_datetime = request.data.get('end_datetime')
-        
-        if not all([service_id,service_pkg_id, start_datetime, end_datetime]):
-            return Response(
-                {'error': 'service_id, start_datetime, and end_datetime are required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            from venue_manager.models import Service
-            service = Service.objects.get(id=service_id)
-        except Service.DoesNotExist:
-            return Response(
-                {'error': 'Service not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        try:
-            package = Package.objects.get(id=service_pkg_id)
-        except Service.DoesNotExist:
-            return Response(
-                {'error': 'Service not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Create child booking
-        InvoiceBooking.objects.create(
-            parent=parent_booking,
-            booking_entity='SERVICE',
-            user=request.user,
-            patient=parent_booking.patient,
-            service=service,
-            package=package,
-            start_datetime=start_datetime,
-            end_datetime=end_datetime,
-            booking_type=BookingType.OPD,
-            status=BookingStatus.BOOKED
+        serializer = ServiceBookingCreateSerializer(
+            data=request.data,
+            context={
+                "parent": self.get_object(),
+            },
         )
-        
-        
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response({"message":"Booked successfully"}, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])

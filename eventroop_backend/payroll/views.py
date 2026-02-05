@@ -9,7 +9,13 @@ from dateutil.relativedelta import relativedelta
 from django.db import transaction as db_transaction
 from django.utils import timezone
 from django.db.models import Sum
-from eventroop_backend.pagination import StandardResultsSetPagination
+
+
+from django.utils.dateparse import parse_date
+
+from attendance.signals import update_attendance_report, clear_cache
+from .signals import recalculate_affected_salary_reports
+
 
 
 class SalaryStructureViewSet(viewsets.ModelViewSet):
@@ -226,5 +232,59 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
 
         return Response(
             {'detail': 'Payment paid successfully.'},
+            status=status.HTTP_200_OK
+        )
+
+
+class RefreshPayrollAPI(APIView):
+    """
+    Manually recompute AttendanceReport + SalaryReport.
+
+    payload:
+    {
+        "user": 2
+        "date": "2026-02-01" # Optional
+    }
+    """
+
+    def post(self, request):
+        user = request.data.get("user")
+
+        date_str = request.data.get("date")
+
+        if date_str:
+            base_date = parse_date(date_str)
+            if not base_date:
+                return Response(
+                    {"error": "Invalid date format (YYYY-MM-DD)"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            base_date = timezone.now().date()
+
+        with db_transaction.atomic():
+
+            # Attendance recalculation
+            report = update_attendance_report(user, base_date)
+
+            if not report:
+                return Response(
+                    {"detail": "Attendance report could not be generated"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Salary recalculation (uses your existing logic)
+            recalculate_affected_salary_reports(
+                user=user,
+                effective_from=report["start_date"]
+            )
+
+            # Clear cache
+            clear_cache(user.id)
+
+        return Response(
+            {
+                "message": "Payroll refreshed successfully"
+            },
             status=status.HTTP_200_OK
         )

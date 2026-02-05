@@ -343,9 +343,11 @@ class InvoiceBooking(models.Model):
         on_delete=models.CASCADE,
         related_name="bookings"
     )
-
     start_datetime = models.DateTimeField(db_index=True)
     end_datetime = models.DateTimeField(db_index=True)
+
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    premium_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     subtotal = models.DecimalField(
         max_digits=10,
@@ -399,7 +401,8 @@ class InvoiceBooking(models.Model):
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        self.subtotal = self._calculate_subtotal()
+        subtotal = self._calculate_subtotal()
+        self.subtotal = (subtotal - self.discount_amount) + self.premium_amount
         super().save(*args, **kwargs)
 
     def _calculate_subtotal(self):
@@ -444,7 +447,6 @@ class TotalInvoice(models.Model):
     paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remaining_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
-    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     status = models.CharField(
@@ -493,7 +495,7 @@ class TotalInvoice(models.Model):
 
         subtotal = venue_amount + services_total
 
-        self.total_amount = subtotal + self.tax_amount - self.discount_amount
+        self.total_amount = subtotal + self.tax_amount
         self.remaining_amount = self.total_amount - self.paid_amount
 
         self.save()

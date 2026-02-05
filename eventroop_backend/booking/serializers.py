@@ -374,6 +374,49 @@ class InvoiceBookingCreateSerializer(serializers.ModelSerializer):
         return data
 
 
+class ServiceBookingCreateSerializer(serializers.ModelSerializer):
+    """
+    Create SERVICE booking under VENUE booking via action API.
+    Parent injected from ViewSet.
+    """
+
+    class Meta:
+        model = InvoiceBooking
+        fields = [
+            "service",
+            "package",
+            "start_datetime",
+            "end_datetime",
+            "discount_amount",
+            "premium_amount",
+        ]
+
+    def validate(self, attrs):
+        parent = self.context.get("parent")
+
+        if not parent:
+            raise serializers.ValidationError("Parent booking missing.")
+
+        if parent.booking_entity != BookingEntity.VENUE:
+            raise serializers.ValidationError("Parent must be VENUE booking.")
+
+        if not attrs.get("service"):
+            raise serializers.ValidationError("Service is required.")
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        parent = self.context["parent"]
+        validated_data["parent"] = parent
+        validated_data["user"] = parent.user
+        validated_data["patient"] = parent.patient
+        validated_data["booking_entity"] = BookingEntity.SERVICE
+        validated_data["booking_type"] = BookingType.OPD
+        validated_data["status"] = BookingStatus.BOOKED
+        return InvoiceBooking.objects.create(**validated_data)
+
+
 class InvoiceSummarySerializer(serializers.Serializer):
     """Serializer for invoice summary/statistics"""
     
