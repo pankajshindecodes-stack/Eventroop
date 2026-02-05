@@ -103,7 +103,6 @@ def _create_monthly_invoices_for_booking(booking):
     
     # Generate list of month periods
     months_to_invoice = _get_month_periods(start_date, end_date)
-    print(f"instance : {booking}")
     invoices_created = []
     
     for period_start, period_end in months_to_invoice:

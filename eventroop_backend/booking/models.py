@@ -373,7 +373,23 @@ class InvoiceBooking(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+    
+    def __str__(self):
+        if self.booking_entity == BookingEntity.SERVICE:
+            entity = self.service
+        elif self.booking_entity == BookingEntity.VENUE:
+            entity = self.venue
+        else:
+            entity = None
+        
+        return (
+            f"#{self.pk} | "
+            f"{self.booking_entity.capitalize()} | "
+            f"{self.patient.get_full_name()} | "
+            f"{entity}"
+        )
 
+    
     def clean(self):
         if self.booking_entity == "VENUE" and not self.venue:
             raise ValidationError("Venue booking requires venue.")
