@@ -39,7 +39,7 @@ def auto_create_monthly_invoices(sender, instance, created, **kwargs):
         return
     
     # Handle new bookings
-    if not created:
+    if created:
         try:
             with transaction.atomic():
                 _create_monthly_invoices_for_booking(instance)
@@ -316,7 +316,7 @@ def regenerate_monthly_invoices(booking, force=False):
     return _create_monthly_invoices_for_booking(booking)
 
 
-# ASYNC TASK FOR FUTURE INVOICE GENERATION (Optional Celery)
+# TODO: ASYNC TASK FOR FUTURE INVOICE GENERATION (Optional Celery)
 def create_future_monthly_invoices(booking):
     """
     Can be used as a Celery task to create invoices asynchronously.
