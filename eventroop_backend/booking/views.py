@@ -474,6 +474,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
     - Managing invoice status and payments
     - Generating invoice numbers
     """
+    # pagination_class = None
     serializer_class = TotalInvoiceSerializer
     search_fields = ['invoice_number', 'patient__first_name','patient__last_name', 'status']
     filterset_fields = {
@@ -489,7 +490,6 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
         'created_at',
         'period_start',
         'period_end',
-        'created_at',
         'issued_date',
         'status', 'total_amount'
     ]
@@ -518,6 +518,110 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
         
         return queryset
     
+    def list(self, request, *args, **kwargs):
+        """
+        Override list() to return grouped response by user and patient.
+        
+        Response format:
+        [
+            {
+                "user_id": 2,
+                "user_name": "Owner One",
+                "patient_id": 16,
+                "patient_name": "Shreya Joshi",
+                "total_invoice_amount": "31800.00",
+                "total_paid": "16000.00",
+                "total_balance": "15800.00",
+                "invoices": [
+                    {
+                        "invoice_date": "2026-02-05",
+                        "invoice_number": "INV-1B655E2E58",
+                        "invoice_amount": "15000.00",
+                        "paid": "0.00",
+                        "balance": "15000.00",
+                        "payment_details": "-"
+                    }
+                ]
+            }
+        ]
+        """
+        queryset = self.filter_queryset(self.get_queryset()).order_by('user_id', 'patient_id')
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            queryset = page
+        
+        grouped_data = []
+
+        from itertools import groupby
+        for (user_id, patient_id), invoices_group in groupby(
+            queryset,
+            key=lambda x: (x.user_id, x.patient_id)
+        ):
+            invoices_list = list(invoices_group)
+            
+            if not invoices_list:
+                continue
+            
+            # Get user and patient info from first invoice
+            first_invoice = invoices_list[0]
+            user = first_invoice.user
+            patient = first_invoice.patient
+            
+            # Calculate totals
+            total_invoice_amount = sum(
+                inv.total_amount for inv in invoices_list
+            )
+            total_paid = sum(
+                inv.paid_amount for inv in invoices_list
+            )
+            total_balance = total_invoice_amount - total_paid
+            
+            # Build invoices array
+            invoices_array = []
+            for invoice in invoices_list:
+                # Get payment details
+                payments = invoice.payments.all()
+                
+                payment_details = "-"
+                if payments.exists():
+                    PaymentSerializer
+                    payment_details = [
+                        {
+                            'id': str(payment.id),
+                            'payment_date': str(payment.created_at),
+                            'amount': str(payment.amount),
+                            'method': payment.method, 
+                            'is_verified': str(payment.is_verified),
+                            'reference': payment.reference or '-'
+                        }
+                        for payment in payments
+                    ]
+                
+                invoices_array.append({
+                    'invoice_date': str(invoice.issued_date),
+                    'invoice_number': invoice.invoice_number,
+                    'invoice_amount': str(invoice.total_amount),
+                    'paid': str(invoice.paid_amount),
+                    'balance': str(invoice.remaining_amount),
+                    'payment_details': payment_details
+                })
+            
+            grouped_data.append({
+                'user_id': user.id,
+                'user_name': user.get_full_name(),
+                'patient_id': patient.id,
+                'patient_name': patient.get_full_name(),
+                'total_invoice_amount': str(total_invoice_amount),
+                'total_paid': str(total_paid),
+                'total_balance': str(total_balance),
+                'invoices': invoices_array
+            })
+        
+        if page is not None:
+            return self.get_paginated_response(grouped_data)
+
+        return Response(grouped_data)
         
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -625,8 +729,8 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
         """
         Get invoice summary statistics for the current user.
         """
-        queryset = self.get_queryset()
-        
+        queryset = self.filter_queryset(self.get_queryset())
+
         total_stats = queryset.aggregate(
             total_invoices=Count('id'),
             total_amount=Sum('total_amount'),
