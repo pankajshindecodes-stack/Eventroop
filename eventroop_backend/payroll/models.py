@@ -1,7 +1,7 @@
 from django.db import models
 from accounts.models import CustomUser
 from django.utils import timezone
-from django.db.models import Q, F
+from django.db.models import Q, F,Sum
 from decimal import Decimal
 from django.core.validators import MinValueValidator
 import uuid
@@ -168,20 +168,7 @@ class SalaryReport(models.Model):
         decimal_places=2,
         default=Decimal("0.00")
     )
-    # -------------------- Overrides --------------------
-    def save(self, *args, **kwargs):
-        """
-        Auto-calculate remaining payment and adjust advance if needed.
-        """
-        salary_structure = SalaryStructure.objects.filter(user=self.user,effective_from__lte=self.end_date).order_by("-effective_from")
-        salary = salary_structure.filter(change_type__in=["BASE_SALARY", "INCREMENT"]).first()
-        self.final_salary = salary.final_salary if salary else Decimal("0.00")
         
-        advance = salary_structure.filter(change_type__in=["ADVANCE", "LOAN"]).first()
-        self.advance_amount = advance.amount if advance else Decimal("0.00")
-
-        self.remaining_payment = self.total_payable_amount - self.paid_amount        
-        super().save(*args, **kwargs)
     # -------------------- Meta --------------------
     class Meta:
         ordering = ["-start_date"]

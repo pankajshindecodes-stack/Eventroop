@@ -45,7 +45,7 @@ def update_attendance_report(user, attendance_date):
                     "absent_days": Decimal(str(report.get("absent_days", 0))),
                     "half_day_count": Decimal(str(report.get("half_day_count", 0))),
                     "paid_leave_days": Decimal(str(report.get("paid_leave_days", 0))),
-                    "weekly_Offs": Decimal(str(report.get("weekly_offs", 0))),
+                    "weekly_Offs": Decimal(str(report.get("weekly_Offs", 0))),
                     "unpaid_leaves": Decimal(str(report.get("unpaid_leaves", 0))),
                     "total_payable_days": Decimal(str(report.get("total_payable_days", 0))),
                     "total_payable_hours": Decimal(str(report.get("total_payable_hours", 0))),

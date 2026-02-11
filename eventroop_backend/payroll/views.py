@@ -1,5 +1,6 @@
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
 from .models import *
 from .serializers import *
 from rest_framework import viewsets, status
@@ -9,14 +10,6 @@ from dateutil.relativedelta import relativedelta
 from django.db import transaction as db_transaction
 from django.utils import timezone
 from django.db.models import Sum
-
-
-from django.utils.dateparse import parse_date
-
-from attendance.signals import update_attendance_report, clear_cache
-from .signals import recalculate_affected_salary_reports
-
-
 
 class SalaryStructureViewSet(viewsets.ModelViewSet):
     """
@@ -162,6 +155,7 @@ class SalaryReportAPIView(APIView):
 
 class SalaryTransactionViewSet(viewsets.ModelViewSet):
     serializer_class = SalaryTransactionSerializer
+    filterset_fields = ["salary_report", "status"]
 
     def get_queryset(self):
         queryset = SalaryTransaction.objects.all()
@@ -225,7 +219,7 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
 
         salary_report.paid_amount = paid_amount
         salary_report.remaining_payment = salary_report.total_payable_amount - paid_amount
-        salary_report.advance_amount = max(paid_amount - salary_report.total_payable_amount, 0)
+        salary_report.advance_amount += max(paid_amount - salary_report.total_payable_amount, 0)
         salary_report.save(
             update_fields=['paid_amount', 'remaining_payment', 'advance_amount', 'updated_at']
         )
@@ -235,56 +229,36 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK
         )
 
-
-class RefreshPayrollAPI(APIView):
+class RefreshReportAPIView(APIView):
     """
-    Manually recompute AttendanceReport + SalaryReport.
-
-    payload:
-    {
-        "user": 2
-        "date": "2026-02-01" # Optional
-    }
+    Recalculate attendance and salary reports for a user.
     """
 
-    def post(self, request):
-        user = request.data.get("user")
+    def get(self, request):
+        user_id = request.query_params.get("user_id")
 
-        date_str = request.data.get("date")
-
-        if date_str:
-            base_date = parse_date(date_str)
-            if not base_date:
-                return Response(
-                    {"error": "Invalid date format (YYYY-MM-DD)"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        else:
-            base_date = timezone.now().date()
-
-        with db_transaction.atomic():
-
-            # Attendance recalculation
-            report = update_attendance_report(user, base_date)
-
-            if not report:
-                return Response(
-                    {"detail": "Attendance report could not be generated"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Salary recalculation (uses your existing logic)
-            recalculate_affected_salary_reports(
-                user=user,
-                effective_from=report["start_date"]
+        if not user_id:
+            return Response(
+                {"detail": "user_id is required."},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-            # Clear cache
-            clear_cache(user.id)
+        user = get_object_or_404(CustomUser, id=user_id)
 
+        try:
+            from .utils import SalaryCalculator 
+            from attendance.utils import AttendanceCalculator
+            with db_transaction.atomic():
+                AttendanceCalculator(user).get_all_periods_attendance()
+                SalaryCalculator(user).refresh_salary_reports()
+
+        except Exception as e:
+            return Response(
+                {"detail": f"Refresh failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         return Response(
-            {
-                "message": "Payroll refreshed successfully"
-            },
+            {"detail": "Reports refreshed successfully."},
             status=status.HTTP_200_OK
         )
+
