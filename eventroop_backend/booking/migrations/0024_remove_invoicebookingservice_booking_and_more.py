@@ -113,7 +113,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='invoicebooking',
             name='package',
-            field=models.ForeignKey(default=5, on_delete=django.db.models.deletion.CASCADE, related_name='bookings', to='booking.package'),
+            field=models.ForeignKey(default=1, on_delete=django.db.models.deletion.CASCADE, related_name='bookings', to='booking.package'),
             preserve_default=False,
         ),
         migrations.AddField(
