@@ -111,7 +111,6 @@ class SalaryCalculator:
                 (attendance.start_date, attendance.end_date),
                 Decimal("0.00"),
             )
-            remaining_payment =  paid_amount - total_amount
 
             remaining_payment = paid_amount - total_amount
             remaining_payment += carry_forward
