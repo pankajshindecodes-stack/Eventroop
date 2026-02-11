@@ -204,6 +204,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
    
     def can_manage_entity(self, entity):
         """Check if user has permission to manage specific entity"""
+        if self.is_superuser:
+            return entity.all == self
         if self.is_owner:
             return entity.owner == self
         elif self.is_manager:

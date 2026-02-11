@@ -1,4 +1,5 @@
 from rest_framework import viewsets, views,status
+from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -21,7 +22,6 @@ from .validations import *
 
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
-    permission_classes = [IsAuthenticated, EntityAccessPermission]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     # --------------------------------------------------------
@@ -64,19 +64,16 @@ class VenueViewSet(viewsets.ModelViewSet):
         user = self.request.user
         qs = Venue.objects.select_related("owner", "location").prefetch_related(
             "manager", "staff", "photos"
-        ).filter(is_deleted=False)
+        ).filter(is_deleted=False).order_by("-created_at")
 
+        if user.is_superuser:
+            return qs
         if user.is_owner:
-            qs = qs.filter(owner=user)
+            return qs.filter(owner=user)
         elif user.is_manager:
-            qs = qs.filter(manager=user)
+            return qs.filter(manager=user)
         elif user.is_staff_user_type:
-            qs = qs.filter(staff=user)
-        else:
-            qs = Venue.objects.none()
-
-        # Default ordering for pagination
-        return qs.order_by("-created_at")
+            return qs.filter(staff=user)
 
     # --------------------------------------------------------
     # CREATE → OWNER ONLY
@@ -95,18 +92,18 @@ class VenueViewSet(viewsets.ModelViewSet):
             instance.soft_delete()
         else:
             instance.delete()
-            
+
 # --------------------------------------------------------
 # SERVICE VIEWSET
 # --------------------------------------------------------
 class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
-    permission_classes = [IsAuthenticated, EntityAccessPermission]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     filterset_fields = {
         "is_active": ["exact"],
         "venue": ["exact"],
+        "venue__location": ["exact"],
         "manager": ["exact"],
         "staff": ["exact"],
         # "tags": ["icontains"],
@@ -125,6 +122,9 @@ class ServiceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
+        if user.is_superuser:
+            return Service.objects.all()
+        
         if user.is_owner:
             return Service.objects.filter(owner=user, is_deleted=False)
 
@@ -134,7 +134,6 @@ class ServiceViewSet(viewsets.ModelViewSet):
         if user.is_vsre_staff: 
             return Service.objects.filter(staff=user, is_deleted=False)
 
-        return Service.objects.none()
 
     # --------------------------------------------------------
     # CREATE WITH OWNER

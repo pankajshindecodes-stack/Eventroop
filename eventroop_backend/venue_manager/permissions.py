@@ -7,5 +7,5 @@ class EntityAccessPermission(BasePermission):
 class CanAssignUsers(BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and (
-            request.user.is_owner or request.user.is_manager
+            request.user.is_owner or request.user.is_manager or request.user.is_superuser
         )

@@ -111,7 +111,7 @@ class ServiceAdmin(admin.ModelAdmin):
 
     readonly_fields = ("created_at", "updated_at")
 
-    filter_horizontal = ("manager", "staff")
+    filter_horizontal = ("manager", "staff","venue")
     inlines = [PhotosInline]
 
     fieldsets = (

@@ -132,7 +132,7 @@ class Service(models.Model):
         help_text="Staff assigned to this service"
     )
       # Optional Relation
-    venue = models.ForeignKey(Venue, on_delete=models.SET_NULL, null=True, blank=True, related_name="services_of_venue")
+    venue = models.ManyToManyField(Venue, blank=True, related_name="services_of_venue")
     
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)

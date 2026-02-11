@@ -178,7 +178,7 @@ class VenueSerializer(serializers.ModelSerializer):
 # --------------------------------------------------------
 class ServiceSerializer(serializers.ModelSerializer):
     photos = PhotosSerializer(many=True, read_only=True)
-
+    
     owner = UserMiniSerializer(read_only=True)
     manager = UserMiniSerializer(many=True, read_only=True)
     staff = UserMiniSerializer(many=True, read_only=True)
