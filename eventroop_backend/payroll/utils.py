@@ -74,10 +74,13 @@ class SalaryCalculator:
                 (row["salary_report__start_date"], row["salary_report__end_date"])
             ] = row["total"] or Decimal("0.00")
 
-        salary_reports = []
-
+        
         # 🔥 Cache salary snapshot per end_date
+        salary_reports = []
         salary_cache = {}
+        carry_forward = Decimal("0.00")
+
+        attendance_reports = sorted(attendance_reports, key=lambda x: x.start_date)
 
         for attendance in attendance_reports:
             if attendance.end_date not in salary_cache:
@@ -104,23 +107,17 @@ class SalaryCalculator:
             else:
                 total_amount = self.calculate_amount(daily_rate, payable_days)
             
-            previous_report = (
-                SalaryReport.objects
-                .filter(user=self.user, end_date__lt=attendance.start_date)
-                .order_by("-end_date")
-                .first()
-            )
-
             paid_amount = paid_amount_map.get(
                 (attendance.start_date, attendance.end_date),
                 Decimal("0.00"),
             )
             remaining_payment =  paid_amount - total_amount
 
-            if previous_report:
-                remaining_payment +=  previous_report.remaining_payment
+            remaining_payment = paid_amount - total_amount
+            remaining_payment += carry_forward
+            carry_forward = remaining_payment
             
-            advance_total = remaining_payment if remaining_payment >0 else 0
+            advance_total = remaining_payment if remaining_payment > 0 else Decimal("0.00")
 
             salary_reports.append(
                 SalaryReport(
