@@ -39,7 +39,8 @@ class SalaryCalculator:
 
     def calculate_amount(self, daily_rate: Decimal, payable_days) -> Decimal:
         payable_days = Decimal(payable_days or 0)
-
+        if payable_days>30:
+            payable_days-=1
         return (daily_rate * payable_days).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,

@@ -583,7 +583,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
                 # Get payment details
                 payments = invoice.payments.all()
                 
-                payment_details = "-"
+                payment_details = []
                 if payments.exists():
                     PaymentSerializer
                     payment_details = [

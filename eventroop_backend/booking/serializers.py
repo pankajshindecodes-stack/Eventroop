@@ -322,7 +322,6 @@ class TotalInvoiceSerializer(serializers.ModelSerializer):
             )
         return value
 
-
 class PaymentCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating payments"""
     
@@ -342,7 +341,6 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
                 "Payment amount must be greater than zero."
             )
         return value
-
 
 class InvoiceBookingCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating new invoice bookings"""
@@ -371,7 +369,6 @@ class InvoiceBookingCreateSerializer(serializers.ModelSerializer):
                 )
         
         return data
-
 
 class ServiceBookingCreateSerializer(serializers.ModelSerializer):
     """
@@ -414,7 +411,6 @@ class ServiceBookingCreateSerializer(serializers.ModelSerializer):
         validated_data["booking_type"] = BookingType.OPD
         validated_data["status"] = BookingStatus.BOOKED
         return InvoiceBooking.objects.create(**validated_data)
-
 
 class InvoiceSummarySerializer(serializers.Serializer):
     """Serializer for invoice summary/statistics"""
