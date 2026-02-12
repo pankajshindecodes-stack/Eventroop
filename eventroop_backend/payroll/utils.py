@@ -39,8 +39,6 @@ class SalaryCalculator:
 
     def calculate_amount(self, daily_rate: Decimal, payable_days) -> Decimal:
         payable_days = Decimal(payable_days or 0)
-        if payable_days>30:
-            payable_days-=1
         return (daily_rate * payable_days).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
@@ -101,7 +99,7 @@ class SalaryCalculator:
             if (
                 salary_obj
                 and salary_obj.salary_type == "MONTHLY"
-                and payable_days == total_days
+                and payable_days>30
             ):
                 total_amount = salary_obj.final_salary
             else:
@@ -131,7 +129,7 @@ class SalaryCalculator:
                     final_salary=salary_obj.final_salary if salary_obj else Decimal("0"),
                 )
             )
-
+        
         SalaryReport.objects.bulk_create(
             salary_reports,
             update_conflicts=True,

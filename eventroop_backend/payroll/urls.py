@@ -13,5 +13,4 @@ urlpatterns = [
     path('', include(router.urls)),
     path("salary-report/", views.SalaryReportAPIView.as_view(),name="salary-report-list"),
     path("salary-report/<int:pk>/", views.SalaryReportAPIView.as_view(),name="salary-report-detail"),
-    path("refresh-report/", views.RefreshReportAPIView.as_view(),name="refresh-report"),
 ]

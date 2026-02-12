@@ -3,8 +3,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
+from django.db import transaction
 
 from .models import Attendance, AttendanceStatus,AttendanceReport
+from .utils import AttendanceCalculator
 from .permissions import IsSuperUserOrOwnerOrReadOnly
 from .serializers import (
     AttendanceSerializer,
@@ -143,7 +145,7 @@ class AttendanceReportView(generics.ListAPIView):
 
     queryset = AttendanceReport.objects.select_related("user")
 
-    # 🎯 Exact match filters
+    #  Exact match filters
     filterset_fields = [
         "user_id",
         "period_type",
@@ -151,7 +153,7 @@ class AttendanceReportView(generics.ListAPIView):
         "end_date",
     ]
 
-    # 🔎 Search (LIKE %term%)
+    #  Search (LIKE %term%)
     search_fields = [
         "user__first_name",
         "user__last_name",
@@ -159,7 +161,7 @@ class AttendanceReportView(generics.ListAPIView):
         "period_type",
     ]
 
-    # ↕️ Ordering
+    #  Ordering
     ordering_fields = [
         "start_date",
         "end_date",
@@ -167,3 +169,18 @@ class AttendanceReportView(generics.ListAPIView):
         "updated_at",
     ]
     ordering = ["-start_date"]
+    
+    def get_queryset(self):
+        user = self.request.user
+
+        with transaction.atomic():
+            AttendanceCalculator(user).get_all_periods_attendance()
+
+        if user.is_superuser:
+            return self.queryset
+
+        if user.is_owner:
+            return self.queryset.filter(user__hierarchy__owner=user)
+
+        if user.is_manager or user.is_vsre_staff:
+            return self.queryset.filter(user=user)

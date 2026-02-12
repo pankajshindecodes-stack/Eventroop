@@ -1,8 +1,8 @@
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.shortcuts import get_object_or_404
 from .models import *
 from .serializers import *
+from .utils import SalaryCalculator 
 from rest_framework import viewsets, status
 from datetime import datetime, timedelta
 from rest_framework.views import APIView
@@ -71,6 +71,10 @@ class SalaryReportAPIView(APIView):
     # -------------------- Base queryset --------------------
     def get_base_queryset(self, request):
         user = request.user
+
+        with db_transaction.atomic():
+            SalaryCalculator(user).refresh_salary_reports()
+            
 
         if user.is_superuser:
             return SalaryReport.objects.all()
@@ -226,39 +230,6 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
 
         return Response(
             {'detail': 'Payment paid successfully.'},
-            status=status.HTTP_200_OK
-        )
-
-class RefreshReportAPIView(APIView):
-    """
-    Recalculate attendance and salary reports for a user.
-    """
-
-    def get(self, request):
-        user_id = request.query_params.get("user_id")
-
-        if not user_id:
-            return Response(
-                {"detail": "user_id is required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user = get_object_or_404(CustomUser, id=user_id)
-
-        try:
-            from .utils import SalaryCalculator 
-            from attendance.utils import AttendanceCalculator
-            with db_transaction.atomic():
-                AttendanceCalculator(user).get_all_periods_attendance()
-                SalaryCalculator(user).refresh_salary_reports()
-
-        except Exception as e:
-            return Response(
-                {"detail": f"Refresh failed: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        return Response(
-            {"detail": "Reports refreshed successfully."},
             status=status.HTTP_200_OK
         )
 

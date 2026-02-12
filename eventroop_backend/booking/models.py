@@ -14,12 +14,7 @@ import uuid
 from .constants import *
 
 class Location(models.Model):
-    LOCATION_TYPE_CHOICES = [
-        ("OPD", "OPD"),
-        ("PARTNER", "Partner"),
-        ("CLIENT", "Client"),
-    ]
-    
+        
     user = models.ForeignKey(
         CustomUser,
         null=True,
@@ -27,7 +22,7 @@ class Location(models.Model):
         on_delete=models.CASCADE,
         related_name="user_location",
     )
-    location_type = models.CharField(max_length=20, choices=LOCATION_TYPE_CHOICES)
+    location_type = models.CharField(max_length=20, choices=BookingType.choices)
     building_name = models.CharField(max_length=250)
     address_line1 = models.CharField(max_length=250)
     address_line2 = models.CharField(max_length=250, blank=True, null=True)
