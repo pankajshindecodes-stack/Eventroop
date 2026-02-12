@@ -182,7 +182,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["mobile_number"]
-
+    class Meta:
+        ordering = ["id"]
     @property
     def is_owner(self):
         return self.user_type in [self.UserTypes.VSRE_OWNER, self.UserTypes.MASTER_ADMIN]
