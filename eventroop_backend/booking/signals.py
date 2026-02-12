@@ -4,7 +4,7 @@ from django.db import transaction
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
 
-from .models import InvoiceBooking, TotalInvoice, Payment
+from .models import InvoiceBooking, TotalInvoice, Payment,Patient
 
 
 # MAIN SIGNAL: Auto Create Monthly Invoices for Multi-Month Bookings
@@ -375,6 +375,11 @@ def handle_booking_period_change_post_save(sender, instance, **kwargs):
         # Clean up flag
         delattr(instance, '_period_changed')
 
+@receiver(post_save, sender=Patient)
+def generate_patient_id(sender,instance,created,**kwargs):
+    if created or not instance.patient_id:
+        instance.patient_id = f"{instance.id:05}"
+        instance.save(update_fields=["patient_id"])
 
 # SIGNAL: Auto-create Invoices for Future Months (Optional)
 def schedule_future_invoice_creation():

@@ -81,7 +81,9 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-
+        if user.is_superuser:
+            return Patient.objects.all()
+            
         # Owner → return all patient data
         if user.is_owner:
             return Patient.objects.filter(
@@ -89,7 +91,7 @@ class PatientViewSet(viewsets.ModelViewSet):
                 Q(registered_by=user)
             )
 
-        # Manager/Staff → only their own patients
+        # Manager/Staff/customer → only their own patients
         return Patient.objects.filter(registered_by=user)
 
     def perform_create(self, serializer):

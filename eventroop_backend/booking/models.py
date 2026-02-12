@@ -170,6 +170,7 @@ class Patient(models.Model):
     )
 
     # Basic Information
+    patient_id = models.CharField(max_length=20, blank=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     email = models.EmailField(null=True, blank=True)
@@ -289,7 +290,7 @@ class Patient(models.Model):
             raise ValidationError('Payment mode is required when advance payment is provided')
     
     def save(self, *args, **kwargs):
-        self.full_clean()
+        self.full_clean()        
         super().save(*args, **kwargs)
 
 class InvoiceBooking(models.Model):

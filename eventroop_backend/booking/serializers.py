@@ -48,6 +48,7 @@ class PatientSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = [
             "id",
+            "patient_id",
             "name_registered_by",
             "registered_by",
             "registration_date",
@@ -61,6 +62,7 @@ class PatientMiniSerializer(serializers.ModelSerializer):
         model = Patient
         fields = [
             "id",
+            "patient_id",
             "name",
             "email",
             "phone",
@@ -106,10 +108,15 @@ class PackageSerializer(serializers.ModelSerializer):
             try:
                 content_type = ContentType.objects.get(model=model_name.lower())
                 attrs["content_type"] = content_type
+                
             except ContentType.DoesNotExist:
                 raise serializers.ValidationError(
                     {"belongs_to_type": "Invalid model name."}
                 )
+        if not attrs.get("content_type",None):
+            raise serializers.ValidationError(
+                {"belongs_to_type": "this field is required."}
+            )
         return attrs
     
     def get_belongs_to_detail(self, obj):

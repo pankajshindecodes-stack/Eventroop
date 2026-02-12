@@ -75,7 +75,7 @@ class SalaryCalculator:
             ] = row["total"] or Decimal("0.00")
 
         
-        # 🔥 Cache salary snapshot per end_date
+        # Cache salary snapshot per end_date
         salary_reports = []
         salary_cache = {}
         carry_forward = Decimal("0.00")
