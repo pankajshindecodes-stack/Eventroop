@@ -70,7 +70,7 @@ class PatientMiniSerializer(serializers.ModelSerializer):
         ]
 
 class PackageSerializer(serializers.ModelSerializer):
-    belongs_to_type = serializers.SerializerMethodField()
+    belongs_to_type = serializers.CharField(write_only=True)
     belongs_to_detail = serializers.SerializerMethodField()
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
 
@@ -85,7 +85,6 @@ class PackageSerializer(serializers.ModelSerializer):
             "package_type",
             "price",
             "is_active",
-            "content_type",
             "object_id",
             "belongs_to_type",
             "belongs_to_detail",
@@ -96,10 +95,23 @@ class PackageSerializer(serializers.ModelSerializer):
             "owner",
             "owner_name",
         ]
+        write_only_fields = [
+            "object_id",
+        ]
+    # Convert model name → content_type
+    def validate(self, attrs):
+        model_name = attrs.pop("belongs_to_type", None)
 
-    def get_belongs_to_type(self, obj):
-        return obj.content_type.model if obj.content_type else None
-
+        if model_name:
+            try:
+                content_type = ContentType.objects.get(model=model_name.lower())
+                attrs["content_type"] = content_type
+            except ContentType.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"belongs_to_type": "Invalid model name."}
+                )
+        return attrs
+    
     def get_belongs_to_detail(self, obj):
         if obj.belongs_to:
             return {
