@@ -1,12 +1,6 @@
 from rest_framework import serializers
-from decimal import Decimal
-from django.utils import timezone
-from datetime import timedelta, datetime
-from accounts.models import CustomUser
-from venue_manager.models import Venue, Service
 from django.db import transaction
 from .models import *
-from .utils import calculate_package_cost
 from .constants import *
 
 class LocationSerializer(serializers.ModelSerializer):
@@ -141,7 +135,6 @@ class PackageListSerializer(serializers.ModelSerializer):
         model = Package
         fields = ["id", "name", "price", "is_active","package_type", "belong_to","belongs_to_type"]
 
-
 class PaymentSerializer(serializers.ModelSerializer):
     """Serializer for Payment model"""
     
@@ -151,12 +144,11 @@ class PaymentSerializer(serializers.ModelSerializer):
             'id',
             'amount',
             'method',
+            'paid_date',
             'reference',
-            'is_verified',
-            'created_at'
+            'is_verified'
         ]
-        read_only_fields = ['id', 'reference', 'created_at']
-
+        read_only_fields = ['id', 'reference',]
 
 class NestedInvoiceBookingSerializer(serializers.ModelSerializer):
     """Nested serializer for child InvoiceBooking entries"""
@@ -177,9 +169,10 @@ class NestedInvoiceBookingSerializer(serializers.ModelSerializer):
             'status',
             'start_datetime',
             'end_datetime',
+            'created_at',
+            'updated_at',
         ]
-        read_only_fields = ['id', 'subtotal']
-
+        read_only_fields = ['id', 'subtotal','created_at','updated_at']
 
 class InvoiceBookingSerializer(serializers.ModelSerializer):
     """Serializer for InvoiceBooking model with nested children"""
@@ -312,7 +305,6 @@ class TotalInvoiceSerializer(serializers.ModelSerializer):
             # dates
             "issued_date",
             "due_date",
-            "paid_date",
 
             # nested
             "payments",
@@ -350,6 +342,7 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
             'amount',
             'method',
             'reference',
+            'paid_date',
             'is_verified'
         ]
     

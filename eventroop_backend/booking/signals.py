@@ -63,7 +63,6 @@ def update_invoice_on_payment(sender, instance, created, **kwargs):
     - paid_amount
     - remaining_amount
     - invoice status (UNPAID → PARTIALLY_PAID → PAID)
-    - paid_date (when fully paid)
     """
     if created or not instance.is_verified:
         invoice = instance.invoice

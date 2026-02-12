@@ -81,16 +81,9 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_superuser:
+        if user.is_superuser or user.is_owner:
             return Patient.objects.all()
-            
-        # Owner → return all patient data
-        if user.is_owner:
-            return Patient.objects.filter(
-                Q(registered_by__hierarchy__owner=user) |
-                Q(registered_by=user)
-            )
-
+        
         # Manager/Staff/customer → only their own patients
         return Patient.objects.filter(registered_by=user)
 
@@ -798,7 +791,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     - Tracking payment methods and references
     """
     filterset_fields = ['invoice_id','is_verified','method']  
-    ordering_fields = ['created_at', 'amount']
+    ordering_fields = ['created_at', 'amount','paid_date']
     ordering = ['-created_at']
     
     def get_queryset(self):

@@ -453,7 +453,6 @@ class TotalInvoice(models.Model):
 
     due_date = models.DateField(null=True, blank=True)
     issued_date = models.DateField(auto_now_add=True)
-    paid_date = models.DateField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -509,7 +508,6 @@ class TotalInvoice(models.Model):
             self.status = InvoiceStatus.UNPAID
         elif paid >= self.total_amount:
             self.status = InvoiceStatus.PAID
-            self.paid_date = timezone.now().date()
         else:
             self.status = InvoiceStatus.PARTIALLY_PAID
 
@@ -527,6 +525,7 @@ class Payment(models.Model):
 
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     method = models.CharField(max_length=20, choices=PaymentMethod.choices)
+    paid_date = models.DateTimeField(default=timezone.now)
 
     reference = models.CharField(max_length=100, blank=True)
     is_verified = models.BooleanField(default=False)
