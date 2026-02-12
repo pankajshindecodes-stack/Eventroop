@@ -99,7 +99,7 @@ class SalaryCalculator:
             if (
                 salary_obj
                 and salary_obj.salary_type == "MONTHLY"
-                and payable_days>30
+                and (payable_days>30 or payable_days == total_days)
             ):
                 total_amount = salary_obj.final_salary
             else:

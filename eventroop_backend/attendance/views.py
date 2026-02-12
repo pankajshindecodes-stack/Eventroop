@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from django.db import transaction
+from django.shortcuts import get_object_or_404
+from accounts.models import CustomUser
 
 from .models import Attendance, AttendanceStatus,AttendanceReport
 from .utils import AttendanceCalculator
@@ -172,9 +174,13 @@ class AttendanceReportView(generics.ListAPIView):
     
     def get_queryset(self):
         user = self.request.user
+        
+        user_id = self.request.query_params.get("user_id")
+        if user_id:
+            report_user = get_object_or_404(CustomUser, id=user_id)
 
-        with transaction.atomic():
-            AttendanceCalculator(user).get_all_periods_attendance()
+            with transaction.atomic():
+                AttendanceCalculator(report_user).get_all_periods_attendance()
 
         if user.is_superuser:
             return self.queryset

@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from dateutil.relativedelta import relativedelta
 from django.db import transaction as db_transaction
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from django.db.models import Sum
 
 class SalaryStructureViewSet(viewsets.ModelViewSet):
@@ -72,10 +73,6 @@ class SalaryReportAPIView(APIView):
     def get_base_queryset(self, request):
         user = request.user
 
-        with db_transaction.atomic():
-            SalaryCalculator(user).refresh_salary_reports()
-            
-
         if user.is_superuser:
             return SalaryReport.objects.all()
 
@@ -93,13 +90,18 @@ class SalaryReportAPIView(APIView):
 
         # ----- User filter -----
         user_id = params.get("user_id")
+       
         if user_id:
             try:
                 user_id = int(user_id)
                 queryset = queryset.filter(user_id=user_id)
             except ValueError:
                 return queryset.none()
-
+            report_user = get_object_or_404(CustomUser, id=user_id)
+                
+            with db_transaction.atomic():
+                SalaryCalculator(report_user).refresh_salary_reports()
+                
         # Initialize default date range (6 months to end of current month)
         today = datetime.now().date()
         end_date = (today.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)  # Last day of current month
