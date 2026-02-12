@@ -13,8 +13,7 @@ class EmailMobileAuthBackend(ModelBackend):
                 Q(email=username) | Q(mobile_number=username)
             ).first()
 
-            if all((
-                user,
+            if user and all((
                 user.category != CustomUser.EmployeeCategory.TERMINATED,
                 user.check_password(password),
                 self.user_can_authenticate(user))
