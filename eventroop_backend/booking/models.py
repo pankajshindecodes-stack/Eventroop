@@ -3,15 +3,12 @@ from django.core.validators import MinValueValidator, MaxValueValidator, RegexVa
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from accounts.models import CustomUser
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
-from decimal import Decimal
-from django.db.models import Sum, F, Q, DecimalField
-from django.db.models.functions import Coalesce
+from django.contrib.contenttypes import fields, models as ct_models
 from decimal import Decimal
 import re
 import uuid
 from .constants import *
+from .utils import calculate_package_cost
 
 class Location(models.Model):
         
@@ -66,7 +63,7 @@ class Package(models.Model):
 
     # Polymorphic relation: belongs_to → Venue | Service | Resource
     content_type = models.ForeignKey(
-        ContentType,
+        ct_models.ContentType,
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -77,7 +74,7 @@ class Package(models.Model):
         }
     )
     object_id = models.PositiveIntegerField(null=True, blank=True)
-    belongs_to = GenericForeignKey('content_type', 'object_id')
+    belongs_to = fields.GenericForeignKey('content_type', 'object_id')
 
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
@@ -465,40 +462,34 @@ class TotalInvoice(models.Model):
     )
 
     # -------------------------------------------------
-
     def recalculate_totals(self):
-        from .utils import calculate_package_cost
-        from django.db.models import Sum
-        from django.db.models.functions import Coalesce
-
-        # Venue portion (monthly slice)
-        venue_amount = calculate_package_cost(
+        # Calculate ONLY for this invoice period
+        venue_subtotal = calculate_package_cost(
             self.booking.package,
             self.period_start,
             self.period_end
         )
 
-        # Services in this period
-        services_total = (
-            self.booking.children.filter(
-                start_datetime__lt=self.period_end,
-                end_datetime__gt=self.period_start
-            ).aggregate(
-                total=Coalesce(Sum("subtotal"), Decimal("0"))
-            )["total"]
-        )
+        # Children services for this period
+        services_subtotal = self.booking.children.filter(
+            start_datetime__lte=self.period_end,
+            end_datetime__gte=self.period_start
+        ).aggregate(
+            total=models.functions.Coalesce(models.Sum("subtotal"), Decimal("0.00"))
+        )["total"]
 
-        subtotal = venue_amount + services_total
+        subtotal = venue_subtotal + services_subtotal
 
         self.total_amount = subtotal + self.tax_amount
         self.remaining_amount = self.total_amount - self.paid_amount
 
-        self.save()
+        self.save(update_fields=["total_amount", "remaining_amount"])
+
 
     def recalculate_payments(self):
 
         paid = self.payments.aggregate(
-            total=Coalesce(Sum("amount"), Decimal("0"))
+            total=models.functions.Coalesce(models.Sum("amount"), Decimal("0"))
         )["total"]
 
         self.paid_amount = paid
