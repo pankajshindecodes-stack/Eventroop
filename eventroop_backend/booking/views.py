@@ -382,41 +382,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         
         serializer = InvoiceBookingSerializer(booking)
         return Response(serializer.data)
-    @action(detail=True, methods=['post'])
-    def cancel_venue(self, request, pk=None):
-        """
-        Cancel a booking and all its child bookings.
-        Sets status to CANCELLED and subtotal to 0.
-        """
-        booking = self.get_object()
-        
-        if booking.status == 'CANCELLED':
-            return Response(
-                {'message': 'Booking is already cancelled'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        booking.cancel()
-        
-        serializer = InvoiceBookingSerializer(booking)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['post'])
-    def cancel_venue(self, request, pk=None):
-        """
-        Cancel a booking and all its child bookings.
-        Sets status to CANCELLED and subtotal to 0.
-        """
-        booking = self.get_object()
-        
-        if booking.status == 'CANCELLED':
-            return Response(
-                {'message': 'Booking is already cancelled'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        booking.cancel()
-        return Response({'message': 'Booking is cancelled Successfully'})
-    
+   
     @action(detail=True, methods=['post'])
     def cancel_service(self, request, pk=None):
         """
@@ -438,7 +404,106 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         child_booking.cancel()
         
         return Response({'message': 'Booking is cancelled Successfully'})
-        
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def reschedule_venue(self, request, pk=None):
+        """
+        Reschedule venue booking.
+        - Only upcoming bookings
+        - Automatically shifts upcoming services
+        - Allows package change
+        """
+        booking = self.get_object()
+        now = timezone.now()
+
+        # Only upcoming allowed
+        if booking.start_datetime <= now:
+            return Response(
+                {"message": "Only upcoming bookings can be rescheduled"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_start = booking.start_datetime
+
+        new_start = request.data.get("start_datetime")
+        new_end = request.data.get("end_datetime")
+        new_package = request.data.get("package")
+
+        if not new_start or not new_end:
+            return Response(
+                {"message": "start_datetime and end_datetime required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        booking.start_datetime = new_start
+        booking.end_datetime = new_end
+
+        # Optional package change
+        if new_package:
+            booking.package_id = new_package
+
+        booking.save()
+
+        # Automatically shift children
+        time_diff = booking.start_datetime - old_start
+
+        for child in booking.children.all():
+            if child.start_datetime > now:  # Only upcoming services
+                child.start_datetime += time_diff
+                child.end_datetime += time_diff
+                child.save()
+
+        return Response({"message": "Venue booking rescheduled successfully"})
+    
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def reschedule_service(self, request, pk=None):
+        """
+        Reschedule a single service.
+        Also allows package change.
+        """
+
+        booking = self.get_object()
+        now = timezone.now()
+
+        service_id = request.data.get("service_id")
+
+        try:
+            child = booking.children.get(id=service_id)
+        except InvoiceBooking.DoesNotExist:
+            return Response(
+                {"message": "Service not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if child.start_datetime <= now:
+            return Response(
+                {"message": "Only upcoming services can be rescheduled"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        new_start = request.data.get("start_datetime")
+        new_end = request.data.get("end_datetime")
+        new_package = request.data.get("package")
+
+        if not new_start or not new_end:
+            return Response(
+                {"message": "start_datetime and end_datetime required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        child.start_datetime = new_start
+        child.end_datetime = new_end
+
+        # Optional package change
+        if new_package:
+            child.package_id = new_package
+
+        child.save()
+
+        return Response({"message": "Service rescheduled successfully"})
+
     @action(detail=False, methods=['get'])
     def by_venue(self, request):
         """Get all venue bookings grouped with their services"""
