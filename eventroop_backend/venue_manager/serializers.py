@@ -178,7 +178,6 @@ class VenueSerializer(serializers.ModelSerializer):
 # --------------------------------------------------------
 class ServiceSerializer(serializers.ModelSerializer):
     photos = PhotosSerializer(many=True, read_only=True)
-    
     owner = UserMiniSerializer(read_only=True)
     manager = UserMiniSerializer(many=True, read_only=True)
     staff = UserMiniSerializer(many=True, read_only=True)
@@ -201,10 +200,13 @@ class ServiceSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         photos_data = self.context["request"].FILES.getlist("photos")
         validated_data["logo"] = self.context["request"].FILES.get("logo")
-
-        
+        venues = validated_data.pop("venue",None)
+            
         service = Service.objects.create(**validated_data)
         
+        if venues:
+            service.venue.set(venues)
+
         if photos_data:
             ct = ContentType.objects.get_for_model(Service)
             photo_objs = [
@@ -224,13 +226,27 @@ class ServiceSerializer(serializers.ModelSerializer):
     # UPDATE SERVICE + OPTIONAL PHOTO UPDATE
     # --------------------------------------------------------
     def update(self, instance, validated_data):
-        photos_data = self.context["request"].FILES.getlist("photos")
-        validated_data["logo"] = self.context["request"].FILES.get("logo")
+        request = self.context["request"]
 
+        photos_data = request.FILES.getlist("photos")
+        logo = request.FILES.get("logo")
+
+        if logo:
+            validated_data["logo"] = logo
+
+        venues = validated_data.pop("venue", None)
+
+        # Update normal fields first
         instance = super().update(instance, validated_data)
 
+        # Then update ManyToMany safely
+        if venues:
+            instance.venue.set(venues)
+
+        # Handle photos
         if photos_data:
             ct = ContentType.objects.get_for_model(Service)
+
             photo_objs = [
                 Photos(
                     image=image,
@@ -240,7 +256,7 @@ class ServiceSerializer(serializers.ModelSerializer):
                 )
                 for image in photos_data
             ]
+
             Photos.objects.bulk_create(photo_objs)
 
         return instance
-    
