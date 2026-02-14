@@ -236,17 +236,26 @@ class ServiceSerializer(serializers.ModelSerializer):
 
         venues = validated_data.pop("venue", None)
 
-        # Update normal fields first
+        # Update normal fields
         instance = super().update(instance, validated_data)
 
-        # Then update ManyToMany safely
-        if venues:
+        # Update ManyToMany
+        if venues is not None:
             instance.venue.set(venues)
 
-        # Handle photos
+        # Replace Photos (NOT add)
         if photos_data:
+            from django.contrib.contenttypes.models import ContentType
+
             ct = ContentType.objects.get_for_model(Service)
 
+            # 🔥 Delete old photos first
+            Photos.objects.filter(
+                content_type=ct,
+                object_id=instance.id
+            ).delete()
+
+            # Create new ones
             photo_objs = [
                 Photos(
                     image=image,
@@ -260,3 +269,4 @@ class ServiceSerializer(serializers.ModelSerializer):
             Photos.objects.bulk_create(photo_objs)
 
         return instance
+
