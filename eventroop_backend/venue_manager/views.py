@@ -23,7 +23,9 @@ from .validations import *
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-    
+    queryset = Venue.objects.select_related("owner", "location").prefetch_related(
+            "manager", "staff", "photos"
+        ).filter(is_deleted=False)
     # --------------------------------------------------------
     # FILTERS (use related location fields)
     # --------------------------------------------------------
@@ -62,9 +64,7 @@ class VenueViewSet(viewsets.ModelViewSet):
     # --------------------------------------------------------
     def get_queryset(self):
         user = self.request.user
-        qs = Venue.objects.select_related("owner", "location").prefetch_related(
-            "manager", "staff", "photos"
-        ).filter(is_deleted=False).order_by("-created_at")
+        qs = self.queryset.order_by("-created_at")
 
         if user.is_superuser:
             return qs
@@ -93,6 +93,10 @@ class VenueViewSet(viewsets.ModelViewSet):
         else:
             instance.delete()
 
+    @action(detail=False, methods=["get"])
+    def venue_dropdown(self,request):
+        queryset = self.get_queryset()
+        return Response(VenueDropdownSerializer(queryset,many=True).data)
 # --------------------------------------------------------
 # SERVICE VIEWSET
 # --------------------------------------------------------
@@ -153,6 +157,10 @@ class ServiceViewSet(viewsets.ModelViewSet):
         else:
             instance.delete()
 
+    @action(detail=False, methods=["get"])
+    def service_dropdown(self,request):
+        queryset = self.get_queryset()
+        return Response(ServiceDropdownSerializer(queryset,many=True).data)
 
 class EntityAssignUsersAPI(views.APIView):
     permission_classes = [IsAuthenticated, CanAssignUsers]

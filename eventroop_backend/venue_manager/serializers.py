@@ -172,6 +172,16 @@ class VenueSerializer(serializers.ModelSerializer):
 
         return instance
 
+class VenueDropdownSerializer(serializers.ModelSerializer):
+    locality = serializers.CharField(read_only=True,source='location.locality')
+
+    class Meta:
+        model = Venue
+        fields = [
+            "id", 
+            "name",
+            "locality",
+        ]
 
 # --------------------------------------------------------
 # SERVICE SERIALIZER
@@ -270,3 +280,12 @@ class ServiceSerializer(serializers.ModelSerializer):
 
         return instance
 
+class ServiceDropdownSerializer(serializers.ModelSerializer):
+    venue = VenueDropdownSerializer(many=True,read_only=True)
+    class Meta:
+        model = Venue
+        fields = [
+            "id", 
+            "name",
+            "venue",
+        ]
