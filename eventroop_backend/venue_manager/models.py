@@ -23,7 +23,6 @@ class Photos(models.Model):
     def __str__(self):
         return f"Photo {self.id} (Primary={self.is_primary})"
 
-
 # ----------------------------- Venue -----------------------
 class Venue(models.Model):
     # User Relationships
@@ -104,7 +103,6 @@ class Venue(models.Model):
             models.Index(fields=['owner', 'is_active']),
             models.Index(fields=['is_active', 'is_deleted']),
         ]
-
 
 # ----------------------------- Service -----------------------
 class Service(models.Model):

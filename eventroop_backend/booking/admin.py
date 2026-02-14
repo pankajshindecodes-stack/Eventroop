@@ -24,7 +24,7 @@ class LocationAdmin(admin.ModelAdmin):
 
 @admin.register(Package)
 class PackageAdmin(admin.ModelAdmin):
-    list_display = ('name', 'owner', 'belongs_to', 'package_type', 'period', 'price', 'is_active')
+    list_display = ('name','id', 'owner', 'belongs_to', 'package_type', 'period', 'price', 'is_active')
     list_filter = ('package_type', 'period', 'is_active', 'created_at')
     search_fields = ('name', 'owner__email')
     readonly_fields = ('belongs_to','created_at', 'updated_at')

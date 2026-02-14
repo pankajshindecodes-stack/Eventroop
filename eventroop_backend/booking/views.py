@@ -222,7 +222,7 @@ class PackageViewSet(viewsets.ModelViewSet):
         Model = ENTITY_MAP[content_type_name]
 
         # ==================================================
-        # CASE 1 → Only content_type → return entities
+        # CASE 1 → Only content_type → return entities (Service + Venue)
         # ==================================================
         if not object_id:
             queryset = Model.objects.filter(owner=request.user, is_active=True)
@@ -246,7 +246,7 @@ class PackageViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # ⭐ GenericRelation
+        # GenericRelation
         packages = obj.packages.all()
 
         serializer = PackageListSerializer(packages, many=True)
@@ -306,6 +306,13 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
 
         if past_order:
             queryset = queryset.filter(end_datetime__lt=now)
+
+        service_id = self.request.query_params.get("service_id")
+        if service_id:
+            queryset = queryset.filter(
+                Q(service=service_id) | Q(children__service=service_id) 
+            ).distinct()
+
         return queryset
     
     def get_serializer_class(self):
