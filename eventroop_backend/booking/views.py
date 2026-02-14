@@ -594,6 +594,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
                 "total_balance": "15800.00",
                 "invoices": [
                     {
+                        "id": 2,
                         "invoice_date": "2026-02-05",
                         "invoice_number": "INV-1B655E2E58",
                         "invoice_amount": "15000.00",
@@ -659,6 +660,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
                     ]
                 
                 invoices_array.append({
+                    'id': str(invoice.id),
                     'invoice_date': str(invoice.issued_date),
                     'invoice_number': invoice.invoice_number,
                     'invoice_amount': str(invoice.total_amount),
