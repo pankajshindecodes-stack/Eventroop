@@ -256,35 +256,7 @@ class Patient(models.Model):
         if self.advance_payment:
             total += self.advance_payment
         return total
-    
-    def clean(self):
-        """Custom validation"""
-        self._validate_id_proof()
-        self._validate_payment()
-    
-    def _validate_id_proof(self):
-        """Validate ID proof number based on type"""
-        if self.id_proof == 'aadhar' and self.id_proof_number:
-            if not self.id_proof_number.isdigit() or len(self.id_proof_number) != 12:
-                raise ValidationError('Aadhar number must be 12 digits')
         
-        if self.id_proof == 'pan' and self.id_proof_number:
-            if len(self.id_proof_number) != 10:
-                raise ValidationError('PAN number must be 10 characters')
-            # PAN format: 5 letters, 4 digits, 1 letter (e.g., ABCDE1234F)
-            pan_pattern = r'^[A-Z]{5}\d{4}[A-Z]{1}$'
-            if not re.match(pan_pattern, self.id_proof_number.upper()):
-                raise ValidationError('PAN number must be in format: ABCDE1234F (5 letters, 4 digits, 1 letter)')
-    
-    def _validate_payment(self):
-        """Validate payment details"""
-        if self.advance_payment and self.advance_payment > 0 and not self.payment_mode:
-            raise ValidationError('Payment mode is required when advance payment is provided')
-    
-    def save(self, *args, **kwargs):
-        self.full_clean()        
-        super().save(*args, **kwargs)
-
 class InvoiceBooking(models.Model):
 
     parent = models.ForeignKey(
