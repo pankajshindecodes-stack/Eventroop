@@ -78,7 +78,35 @@ class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
 class PatientViewSet(viewsets.ModelViewSet):
     queryset = Patient.objects.all()
     serializer_class = PatientSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    
+    # Simple filtering
+    filterset_fields = [
+        "gender",
+        "blood_group",
+        "payment_mode",
+        "registered_by",
+        "id_proof",
+        "registration_date",
+    ]
+
+    # Search 
+    search_fields = [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "patient_id",
+    ]
+
+    # Ordering
+    ordering_fields = [
+        "registration_date",
+        "first_name",
+        "age",
+        "registration_fee",
+    ]
+
+    ordering = ['-registration_date']
 
     def get_queryset(self):
         user = self.request.user
@@ -87,12 +115,31 @@ class PatientViewSet(viewsets.ModelViewSet):
         
         # Manager/Staff/customer → only their own patients
         return Patient.objects.filter(registered_by=user)
-
+    
     def perform_create(self, serializer):
         """
         Set registered_by = request.user automatically
         """
         serializer.save(registered_by=self.request.user)
+    
+    @action(detail=False, methods=["get"])
+    def patient_dropdown(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Select only required fields (IMPORTANT for performance)
+        queryset = queryset.only("id", "first_name", "last_name")
+
+        # Build lightweight response
+        data = [
+            {
+                "id": obj.id,
+                "name": obj.get_full_name()
+            }
+            for obj in queryset
+        ]
+
+        return Response(data,status=status.HTTP_200_OK)
+    
 
 class LocationViewSet(viewsets.ModelViewSet):
     serializer_class = LocationSerializer
@@ -574,6 +621,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = TotalInvoiceSerializer
     search_fields = ['invoice_number', 'patient__first_name', 'patient__last_name', 'status']
     filterset_fields = {
+        'patient': ['exact'],
         'period_start': ['month'],
         'period_end': ['month'],
         'booking__booking_type': ['exact'],
@@ -794,35 +842,17 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
     def summary(self, request):
         """Get invoice summary statistics for the current user."""
         queryset = self.filter_queryset(self.get_queryset())
-
         total_stats = queryset.aggregate(
             total_invoices=Count('id'),
             total_amount=Sum('total_amount'),
             paid_amount=Sum('paid_amount'),
-            remaining_amount=Sum('remaining_amount')
+            remaining_amount=Sum('remaining_amount'),
+            unpaid_count=Count('id', filter=Q(status=InvoiceStatus.UNPAID)),
+            partially_paid_count=Count('id', filter=Q(status=InvoiceStatus.PARTIALLY_PAID)),
+            paid_count=Count('id', filter=Q(status=InvoiceStatus.PAID))
         )
         
-        status_counts = queryset.values('status').annotate(count=Count('id'))
-        
-        summary_data = {
-            'total_invoices': total_stats['total_invoices'] or 0,
-            'total_amount': total_stats['total_amount'] or Decimal('0.00'),
-            'paid_amount': total_stats['paid_amount'] or Decimal('0.00'),
-            'remaining_amount': total_stats['remaining_amount'] or Decimal('0.00'),
-            'unpaid_count': 0,
-            'partially_paid_count': 0,
-            'paid_count': 0
-        }
-        
-        for status_item in status_counts:
-            if status_item['status'] == 'UNPAID':
-                summary_data['unpaid_count'] = status_item['count']
-            elif status_item['status'] == 'PARTIALLY_PAID':
-                summary_data['partially_paid_count'] = status_item['count']
-            elif status_item['status'] == 'PAID':
-                summary_data['paid_count'] = status_item['count']
-        
-        serializer = InvoiceSummarySerializer(summary_data)
+        serializer = InvoiceSummarySerializer(total_stats)
         return Response(serializer.data)
     
     @action(detail=False, methods=['get'])
@@ -847,9 +877,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
 class PaymentViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing payments.
-    
-    NO SIGNALS - Payment verification and invoice updates handled by model methods.
-    
+        
     Handles:
     - Recording payments
     - Verifying/unverifying payments
@@ -901,9 +929,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             patient=invoice.patient,
             **serializer.validated_data
         )
-        
-        # Payment.save() automatically calls invoice.recalculate_payments()
-        
+                
         output_serializer = PaymentSerializer(payment)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
     

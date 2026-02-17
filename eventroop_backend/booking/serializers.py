@@ -427,7 +427,7 @@ class ServiceBookingCreateSerializer(serializers.ModelSerializer):
 
 class InvoiceSummarySerializer(serializers.Serializer):
     """Serializer for invoice summary/statistics"""
-    
+
     total_invoices = serializers.IntegerField()
     total_amount = serializers.DecimalField(
         max_digits=12,
