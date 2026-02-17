@@ -564,15 +564,13 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
 class TotalInvoiceViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing invoices.
-    
-    NO SIGNALS - Invoices are created and updated via model methods.
-    
+        
     Handles:
     - Manual invoice creation for specific periods
     - Retrieving invoice details and payments
     - Manual recalculation endpoints
     """
-    pagination_class = None
+    # pagination_class = None
     serializer_class = TotalInvoiceSerializer
     search_fields = ['invoice_number', 'patient__first_name', 'patient__last_name', 'status']
     filterset_fields = {
