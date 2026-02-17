@@ -5,10 +5,10 @@ from django.utils import timezone
 from accounts.models import CustomUser
 from django.contrib.contenttypes import fields, models as ct_models
 from decimal import Decimal
-import re
 import uuid
 from .constants import *
-from .utils import calculate_package_cost
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
 
 class Location(models.Model):
         
@@ -256,7 +256,17 @@ class Patient(models.Model):
         if self.advance_payment:
             total += self.advance_payment
         return total
-        
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+
+        super().save(*args, **kwargs)
+
+        # After first save, ID exists
+        if is_new and not self.patient_id:
+            self.patient_id = f"{self.pk:05}"
+            super().save(update_fields=["patient_id"])
+
 class InvoiceBooking(models.Model):
 
     parent = models.ForeignKey(
@@ -342,35 +352,91 @@ class InvoiceBooking(models.Model):
         ordering = ["-created_at"]
     
     def __str__(self):
+        """
+        Safe string representation with null checks.
+        """
         if self.booking_entity == BookingEntity.SERVICE:
-            entity = self.service
+            entity = str(self.service) if self.service else "Unknown Service"
         elif self.booking_entity == BookingEntity.VENUE:
-            entity = self.venue
+            entity = str(self.venue) if self.venue else "Unknown Venue"
         else:
-            entity = None
+            entity = "Unknown"
+        
+        patient_name = self.patient.get_full_name() if self.patient else "Unknown Patient"
         
         return (
             f"#{self.pk} | "
-            f"{self.booking_entity.capitalize()} | "
-            f"{self.patient.get_full_name()} | "
+            f"{self.get_booking_entity_display()} | "
+            f"{patient_name} | "
             f"{entity}"
         )
 
     
     def clean(self):
+        """
+        Comprehensive validation including dates and parent-child relationships.
+        """
+        errors = {}
+        
+        # Entity-specific validation
         if self.booking_entity == "VENUE" and not self.venue:
-            raise ValidationError("Venue booking requires venue.")
+            errors['venue'] = "Venue booking requires venue."
 
         if self.booking_entity == "SERVICE" and not self.service:
-            raise ValidationError("Service booking requires service.")
+            errors['service'] = "Service booking requires service."
+        
+        # Date validation
+        if self.start_datetime >= self.end_datetime:
+            errors['start_datetime'] = "Start date must be before end date."
+        
+        # Parent-child date validation
+        if self.parent:
+            if (self.start_datetime < self.parent.start_datetime or 
+                self.end_datetime > self.parent.end_datetime):
+                errors['start_datetime'] = (
+                    "Child booking dates must be within parent booking dates."
+                )
+        
+        if errors:
+            raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        self.full_clean()
+        """
+        Calculate subtotal and create invoices for new bookings.
+        NO SIGNALS - all logic is here.
+        """
+        skip_validation = kwargs.pop('skip_validation', False)
+        skip_invoice_creation = kwargs.pop('skip_invoice_creation', False)
+        
+        # Only validate on explicit creation/update, not from internal calls
+        if not skip_validation:
+            self.full_clean()
+        
+        # Calculate subtotal
         subtotal = self._calculate_subtotal()
         self.subtotal = (subtotal - self.discount_amount) + self.premium_amount
+        
         super().save(*args, **kwargs)
+        
+        # After save, handle invoice logic (only for new bookings)
+        if not skip_invoice_creation and self.pk:
+            # Check if this is a new booking (no invoices created yet)
+            if not self.invoices.exists():
+                # Only create invoices for VENUE or standalone SERVICE
+                if self.parent is None and self.booking_entity in ['VENUE', 'SERVICE']:
+                    try:
+                        self._create_monthly_invoices()
+                    except Exception as e:
+                        # Log but don't fail the save
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(
+                            f"Error creating monthly invoices for booking {self.id}: {str(e)}",
+                            exc_info=True
+                        )
 
     def _calculate_subtotal(self):
+        """Calculate base subtotal before discounts/premiums."""
         from .utils import calculate_package_cost
         return calculate_package_cost(
             self.package,
@@ -378,21 +444,227 @@ class InvoiceBooking(models.Model):
             self.end_datetime
         )
 
-    def cancel(self):
+    def _create_monthly_invoices(self):
+        """
+        Create monthly invoices when booking spans multiple months.
+        Called automatically during save() for new bookings.
+        
+        For a booking from Feb 1 - Apr 30:
+        - Invoice 1: Feb 1 - Feb 29 (February)
+        - Invoice 2: Mar 1 - Mar 31 (March)
+        - Invoice 3: Apr 1 - Apr 30 (April)
+        """
+        with transaction.atomic():
+            months_to_invoice = self._get_month_periods()
+            
+            for period_start, period_end in months_to_invoice:
+                # Check if invoice already exists
+                existing_invoice = TotalInvoice.objects.filter(
+                    booking=self,
+                    period_start=period_start,
+                    period_end=period_end
+                ).first()
+                
+                if existing_invoice:
+                    # Already exists, recalculate
+                    existing_invoice.recalculate_totals()
+                    continue
+                
+                # Create new invoice
+                invoice = TotalInvoice.objects.create(
+                    booking=self,
+                    period_start=period_start,
+                    period_end=period_end,
+                    patient=self.patient,
+                    user=self.user
+                )
+                
+                # Calculate totals
+                invoice.recalculate_totals()
 
+    def _get_month_periods(self):
+        """
+        Split datetime range into monthly periods.
+        
+        Returns:
+            list: [(period_start, period_end), ...]
+        """
+        if self.start_datetime >= self.end_datetime:
+            return []
+
+        periods = []
+        current = self.start_datetime
+
+        while current < self.end_datetime:
+            # Calculate the last moment of the current month
+            first_of_next_month = (
+                current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                + relativedelta(months=1)
+            )
+            
+            # Last moment of current month
+            last_of_current_month = first_of_next_month - timedelta(microseconds=1)
+            
+            # Period end is the minimum of last day of month or booking end
+            period_end = min(last_of_current_month, self.end_datetime)
+            
+            periods.append((current, period_end))
+            
+            # Next period starts immediately after current period ends
+            current = period_end + timedelta(microseconds=1)
+
+        return periods
+
+    def _get_months_count(self):
+        """
+        Calculate number of months this booking spans.
+        
+        Returns:
+            int: Number of months (including partial months)
+        
+        Example:
+            2026-02-15 to 2026-04-25 = 3 months
+            2026-02-01 to 2026-02-28 = 1 month
+        """
+        if self.start_datetime >= self.end_datetime:
+            return 0
+        
+        months = 0
+        current = self.start_datetime
+        
+        while current < self.end_datetime:
+            months += 1
+            current = current + relativedelta(months=1)
+        
+        return months
+
+    def cancel(self):
+        """
+        Cancel this booking and all its child bookings.
+        Automatically updates invoices.
+        """
         if self.status == BookingStatus.CANCELLED:
             return
 
         with transaction.atomic():
-
-            self.status = BookingStatus.CANCELLED
-            self.subtotal = Decimal("0")
-            self.save(update_fields=["status", "subtotal"])
-
+            # Update children first
             self.children.update(
                 status=BookingStatus.CANCELLED,
-                subtotal=0
+                subtotal=Decimal("0.00")
             )
+            
+            # Update self
+            self.status = BookingStatus.CANCELLED
+            self.subtotal = Decimal("0.00")
+            self.save(update_fields=["status", "subtotal"], skip_validation=True, skip_invoice_creation=True)
+            
+            # Update associated invoices
+            invoices = TotalInvoice.objects.filter(booking=self)
+            for invoice in invoices:
+                if invoice.paid_amount == 0:
+                    invoice.status = InvoiceStatus.CANCELLED
+                    invoice.save(update_fields=['status'])
+                else:
+                    # Recalculate with cancelled booking
+                    invoice.recalculate_totals()
+
+    def reschedule(self, new_start_datetime, new_end_datetime, new_package_id=None):
+        """
+        Reschedule the booking and optionally change package.
+        Automatically updates invoices and shifts child services.
+        
+        Args:
+            new_start_datetime: New start datetime
+            new_end_datetime: New end datetime
+            new_package_id: Optional new package ID
+        
+        Raises:
+            ValidationError: If booking can't be rescheduled
+        """
+        now = timezone.now()
+        
+        # Only upcoming bookings can be rescheduled
+        if self.start_datetime <= now:
+            raise ValidationError("Only upcoming bookings can be rescheduled")
+        
+        if new_start_datetime >= new_end_datetime:
+            raise ValidationError("Start date must be before end date")
+        
+        with transaction.atomic():
+            old_start = self.start_datetime
+            
+            # Update booking
+            self.start_datetime = new_start_datetime
+            self.end_datetime = new_end_datetime
+            
+            if new_package_id:
+                self.package_id = new_package_id
+            
+            self.save(skip_invoice_creation=True)
+            
+            # Recalculate associated invoices
+            self._recalculate_invoices()
+            
+            # Shift child services
+            time_diff = new_start_datetime - old_start
+            
+            for child in self.children.all():
+                if child.start_datetime > now:  # Only upcoming services
+                    child.start_datetime += time_diff
+                    child.end_datetime += time_diff
+                    child.save(skip_invoice_creation=True)
+                    
+                    # Recalculate child's invoices
+                    child._recalculate_invoices()
+
+    def _recalculate_invoices(self):
+        """Recalculate all associated invoices."""
+        invoices = TotalInvoice.objects.filter(booking=self)
+        for invoice in invoices:
+            invoice.recalculate_totals()
+
+    def get_booking_invoice_info(self):
+        """
+        Get comprehensive invoice information for this booking.
+        
+        Returns:
+            dict: Invoice summary information
+        """
+        invoices = self.invoices.all()
+        
+        total_amount = sum(inv.total_amount for inv in invoices)
+        total_paid = sum(inv.paid_amount for inv in invoices)
+        total_remaining = sum(inv.remaining_amount for inv in invoices)
+        
+        return {
+            'booking_id': self.id,
+            'booking_entity': self.get_booking_entity_display(),
+            'months_count': self._get_months_count(),
+            'month_periods': [
+                {
+                    'period_start': start.isoformat(),
+                    'period_end': end.isoformat(),
+                }
+                for start, end in self._get_month_periods()
+            ],
+            'invoices_count': invoices.count(),
+            'invoices': [
+                {
+                    'id': inv.id,
+                    'invoice_number': inv.invoice_number,
+                    'period': f"{inv.period_start.date()} - {inv.period_end.date()}",
+                    'total_amount': str(inv.total_amount),
+                    'paid_amount': str(inv.paid_amount),
+                    'remaining_amount': str(inv.remaining_amount),
+                    'status': inv.get_status_display(),
+                    'due_date': inv.due_date,
+                }
+                for inv in invoices.order_by('period_start')
+            ],
+            'total_invoice_amount': str(total_amount),
+            'total_paid': str(total_paid),
+            'total_remaining': str(total_remaining),
+        }
 
 class TotalInvoice(models.Model):
 
@@ -425,56 +697,130 @@ class TotalInvoice(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
     def generate_invoice_number():
         return f"INV-{uuid.uuid4().hex[:10].upper()}"
+    
     invoice_number = models.CharField(
         max_length=50,
         unique=True,
         default=generate_invoice_number
     )
 
-    # -------------------------------------------------
+    class Meta:
+        ordering = ['-issued_date']
+        indexes = [
+            models.Index(fields=['booking', 'period_start']),
+            models.Index(fields=['user', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.invoice_number} - {self.period_start.date()} to {self.period_end.date()}"
+
     def recalculate_totals(self):
-        # Calculate ONLY for this invoice period
-        venue_subtotal = calculate_package_cost(
+        """
+        Recalculate invoice total amount based on current booking and children.
+        Uses update() to avoid triggering save signals.
+        """
+        # Calculate venue subtotal
+        venue_subtotal = self._calculate_venue_subtotal()
+        
+        # Calculate services subtotal for this period
+        services_subtotal = self._calculate_services_subtotal()
+
+        subtotal = venue_subtotal + services_subtotal
+        self.total_amount = subtotal + (self.tax_amount or Decimal("0"))
+        self.remaining_amount = self.total_amount - (self.paid_amount or Decimal("0"))
+        super().save(update_fields=["total_amount","remaining_amount"])
+        
+    def _calculate_venue_subtotal(self):
+        """Calculate venue/parent booking cost for this period."""
+        from .utils import calculate_package_cost
+        
+        subtotal = calculate_package_cost(
             self.booking.package,
             self.period_start,
             self.period_end
         )
+        
+        # Ensure Decimal type and handle None
+        return Decimal(str(subtotal or "0"))
 
-        # Children services for this period
+    def _calculate_services_subtotal(self):
+        """Calculate all child services cost for this period."""
+        from django.db.models import Sum
+        from django.db.models.functions import Coalesce
+        
         services_subtotal = self.booking.children.filter(
             start_datetime__lte=self.period_end,
             end_datetime__gte=self.period_start
         ).aggregate(
-            total=models.functions.Coalesce(models.Sum("subtotal"), Decimal("0.00"))
+            total=Coalesce(Sum("subtotal"), Decimal("0.00"))
         )["total"]
-
-        subtotal = venue_subtotal + services_subtotal
-
-        self.total_amount = subtotal + self.tax_amount
-        self.remaining_amount = self.total_amount - self.paid_amount
-
-        self.save(update_fields=["total_amount", "remaining_amount"])
-
+        
+        return services_subtotal or Decimal("0.00")
 
     def recalculate_payments(self):
-
+        """
+        Recalculate paid amount and invoice status based on recorded payments.
+        Called when payments are added or modified.
+        """
+        from django.db.models import Sum
+        from django.db.models.functions import Coalesce
+        
         paid = self.payments.aggregate(
-            total=models.functions.Coalesce(models.Sum("amount"), Decimal("0"))
+            total=Coalesce(Sum("amount"), Decimal("0"))
         )["total"]
 
-        self.paid_amount = paid
-        self.remaining_amount = max(self.total_amount - paid, Decimal("0"))
+        self.paid_amount = paid or Decimal("0")
+        self.remaining_amount = max(self.total_amount - self.paid_amount, Decimal("0"))
 
-        if paid == 0:
+        # Determine status
+        if self.paid_amount == 0:
             self.status = InvoiceStatus.UNPAID
-        elif paid >= self.total_amount:
+        elif self.paid_amount >= self.total_amount:
             self.status = InvoiceStatus.PAID
         else:
             self.status = InvoiceStatus.PARTIALLY_PAID
 
-        self.save()
+        # Use update() to avoid triggering post_save
+        super().save(
+            update_fields=[
+                "paid_amount",
+                "remaining_amount",
+                "status",
+            ]
+        )
+        
+        
+        
+        # Refresh from DB
+        self.refresh_from_db()
+
+    def get_payments_info(self):
+        """Get summary of all payments for this invoice."""
+        payments = self.payments.all()
+        
+        return {
+            'invoice_id': self.id,
+            'invoice_number': self.invoice_number,
+            'total_due': str(self.total_amount),
+            'paid': str(self.paid_amount),
+            'remaining': str(self.remaining_amount),
+            'status': self.get_status_display(),
+            'payment_count': payments.count(),
+            'payments': [
+                {
+                    'id': p.id,
+                    'amount': str(p.amount),
+                    'method': p.method,
+                    'date': p.paid_date.isoformat(),
+                    'reference': p.reference or '-',
+                    'is_verified': p.is_verified,
+                }
+                for p in payments.order_by('-paid_date')
+            ]
+        }
 
 class Payment(models.Model):
 
@@ -495,11 +841,63 @@ class Payment(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def save(self, *args, **kwargs):
+    class Meta:
+        ordering = ['-paid_date']
+        indexes = [
+            models.Index(fields=['invoice', 'created_at']),
+            models.Index(fields=['is_verified']),
+        ]
 
+    def __str__(self):
+        return f"Payment {self.id} - {self.amount} for Invoice {self.invoice.invoice_number}"
+
+    def save(self, *args, **kwargs):
+        """
+        Save payment and recalculate invoice status.
+        all logic is here.
+        """
         if not self.reference:
             self.reference = f"PAY-{uuid.uuid4().hex[:10].upper()}"
 
         super().save(*args, **kwargs)
-
+        
+        # Recalculate invoice status after payment is recorded
         self.invoice.recalculate_payments()
+
+    def verify(self):
+        """
+        Mark payment as verified and recalculate invoice status.
+        
+        Returns:
+            bool: True if verification was successful
+        """
+        if self.is_verified:
+            return False  # Already verified
+        
+        with transaction.atomic():
+            self.is_verified = True
+            self.save(update_fields=['is_verified'])
+            
+            # Recalculate invoice
+            self.invoice.recalculate_payments()
+            
+            return True
+
+    def unverify(self):
+        """
+        Mark payment as unverified and recalculate invoice status.
+        
+        Returns:
+            bool: True if unverification was successful
+        """
+        if not self.is_verified:
+            return False  # Not verified
+        
+        with transaction.atomic():
+            self.is_verified = False
+            self.save(update_fields=['is_verified'])
+            
+            # Recalculate invoice
+            self.invoice.recalculate_payments()
+            
+            return True
