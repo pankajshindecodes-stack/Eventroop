@@ -163,6 +163,7 @@ class NestedInvoiceBookingSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'booking_entity',
+            'order_id',
             'service',
             'service_name',
             'subtotal',
@@ -170,10 +171,11 @@ class NestedInvoiceBookingSerializer(serializers.ModelSerializer):
             'status',
             'start_datetime',
             'end_datetime',
+            'auto_continue',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'subtotal','created_at','updated_at']
+        read_only_fields = ['id', 'subtotal','order_id','created_at','updated_at']
 
 class InvoiceBookingSerializer(serializers.ModelSerializer):
     """Serializer for InvoiceBooking model with nested children"""
@@ -399,6 +401,7 @@ class ServiceBookingCreateSerializer(serializers.ModelSerializer):
             "package",
             "start_datetime",
             "end_datetime",
+            "auto_continue",
             "discount_amount",
             "premium_amount",
         ]

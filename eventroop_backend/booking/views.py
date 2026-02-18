@@ -362,6 +362,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
                 Q(service=service_id) | Q(children__service=service_id) 
             ).distinct()
 
+
         return queryset
     
     def get_serializer_class(self):
@@ -417,6 +418,8 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
 
         serializer.is_valid(raise_exception=True)
         child_booking = serializer.save()
+        child_booking.order_id = generate_order_id(instance=child_booking,created_by=request.user)
+        child_booking.save(update_fields=["order_id"])
         
         # Recalculate parent invoices since child service was added
         parent._recalculate_invoices()
