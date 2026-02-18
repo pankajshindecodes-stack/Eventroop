@@ -218,3 +218,38 @@ def auto_generate_monthly_invoices():
                 timezone.make_aware(datetime.combine(month_start, datetime.min.time())),
                 timezone.make_aware(datetime.combine(month_end, datetime.max.time()))
             )
+
+def generate_order_id(instance, created_by=None):
+    """
+    created_by = user who triggered creation
+    If None → system / auto
+    """
+    now = timezone.now()
+
+    # ---- Financial Year (April - March) ----
+    if now.month >= 4:
+        start_year = now.year
+        end_year = now.year + 1
+    else:
+        start_year = now.year - 1
+        end_year = now.year
+
+    financial_year = f"{start_year}{str(end_year)[-2:]}"
+
+
+    # ---- Prefix Logic ----
+    if created_by is None:
+        alfa = "A"   # Auto (Celery/System)
+    else:
+        if created_by.is_superuser:
+            alfa = "S"
+        elif created_by.is_owner:
+            alfa = "O"
+        elif created_by.is_manager:
+            alfa = "M"
+        elif created_by.is_customer:
+            alfa = "U"
+        else:
+            alfa = "X"
+            
+    return f"{alfa}{financial_year}{instance.id:05}"

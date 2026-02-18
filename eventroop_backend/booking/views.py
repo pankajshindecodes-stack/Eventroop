@@ -3,6 +3,7 @@ from venue_manager.serializers import VenueSerializer, ServiceSerializer
 from rest_framework import viewsets, permissions, status
 from .serializers import *
 from .models import *
+from .utils import generate_order_id
 from .filters import EntityFilter
 from django.db.models import Q, Sum, Count,Prefetch
 from django.shortcuts import get_object_or_404
@@ -384,8 +385,10 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         serializer.validated_data['booking_type'] = BookingType.IN_HOUSE
         serializer.validated_data['booking_entity'] = BookingEntity.VENUE
         
-        # Save booking - this triggers invoice creation automatically
+        # Save booking - this triggers invoice creation
         booking = serializer.save()
+        booking.order_id = generate_order_id(instance=booking,created_by=request.user)
+        booking.save(update_fields=["order_id"])
         
         response_serializer = InvoiceBookingSerializer(booking)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)

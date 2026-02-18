@@ -268,6 +268,7 @@ class Patient(models.Model):
             super().save(update_fields=["patient_id"])
 
 class InvoiceBooking(models.Model):
+    order_id = models.CharField(max_length=50, blank=True)
 
     parent = models.ForeignKey(
         "self",
@@ -344,6 +345,7 @@ class InvoiceBooking(models.Model):
         default=BookingStatus.DRAFT,
         db_index=True
     )
+    auto_continue = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -209,6 +209,7 @@ class InvoiceBookingSerializer(serializers.ModelSerializer):
         model = InvoiceBooking
         fields = [
             'id',
+            'order_id',
             'booking_entity',
             'booking_type',
             'status',
@@ -224,9 +225,10 @@ class InvoiceBookingSerializer(serializers.ModelSerializer):
             'subtotal',
             'start_datetime',
             'end_datetime',
+            'auto_continue',
             'children',
         ]
-        read_only_fields = ['id', 'subtotal']
+        read_only_fields = ['id', 'subtotal','order_id']
     
     def validate(self, data):
         """Validate booking entity and required fields"""
@@ -366,6 +368,7 @@ class InvoiceBookingCreateSerializer(serializers.ModelSerializer):
             'package',
             'start_datetime',
             'end_datetime',
+            'auto_continue',
         ]
         extra_kwargs = {
             "venue": {"required": True},
