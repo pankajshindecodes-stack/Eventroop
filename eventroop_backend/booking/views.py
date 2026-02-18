@@ -10,6 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils.dateparse import parse_datetime
 from itertools import groupby
+from datetime import datetime, time
 
 class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -312,6 +313,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
 
     search_fields = ['patient__first_name', 'patient__last_name', 'booking_entity', 'status']  
     filterset_fields = {
+        'patient': ['exact'],
         'start_datetime': ['month'],
         'end_datetime': ['month'],
         'booking_type': ['exact'],
@@ -618,12 +620,13 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
     - Manual recalculation endpoints
     """
     # pagination_class = None
+    queryset = TotalInvoice.objects.select_related(
+        'booking', 'patient', 'user'
+    ).prefetch_related('payments')
     serializer_class = TotalInvoiceSerializer
     search_fields = ['invoice_number', 'patient__first_name', 'patient__last_name', 'status']
     filterset_fields = {
         'patient': ['exact'],
-        'period_start': ['month'],
-        'period_end': ['month'],
         'booking__booking_type': ['exact'],
         'status': ['exact'],
     }
@@ -634,24 +637,47 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
     ]
     ordering = ['-created_at']
     
+    
     def get_queryset(self):
-        """Get invoices filtered by user"""
-        queryset = TotalInvoice.objects.select_related(
-            'booking', 'patient', 'user'
-        ).prefetch_related('payments')
-
+        queryset = super().get_queryset()
         user = self.request.user
+
+        # Filter by customer
         if user.is_customer:
             queryset = queryset.filter(user=user)
-            
-        # Filter by date range if specified
-        start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
-        if start_date:
-            queryset = queryset.filter(issued_date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(issued_date__lte=end_date)
-        
+
+        months_param = self.request.query_params.get('filter_months', None)
+
+        if months_param:
+            try:
+                months = int(months_param)
+
+                now = timezone.localtime()  # aware
+                today = now.date()
+
+                start_date = today - relativedelta(months=months)
+
+                # Start of that day (00:00:00)
+                start_datetime = timezone.make_aware(
+                    datetime.combine(start_date, time.min),
+                    timezone.get_current_timezone()
+                )
+
+                # End of that day (00:00:00)
+                end_datetime = timezone.make_aware(
+                    datetime.combine(today, time.max),
+                    timezone.get_current_timezone()
+                )
+
+                queryset = queryset.filter(
+                    period_start__gte=start_datetime,
+                    # period_end__lte=end_datetime
+                    
+                )
+
+            except (ValueError, TypeError):
+                pass
+    
         return queryset
     
     def list(self, request, *args, **kwargs):
@@ -692,6 +718,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
                         'id': str(p.id),
                         'payment_date': str(p.created_at),
                         'amount': str(p.amount),
+                        'paid_date': str(p.paid_date),
                         'method': p.method, 
                         'is_verified': p.is_verified,
                         'reference': p.reference or '-'
@@ -704,6 +731,8 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
                     'invoice_date': str(invoice.issued_date),
                     'invoice_number': invoice.invoice_number,
                     'invoice_amount': str(invoice.total_amount),
+                    'period_start': str(invoice.period_start),
+                    'period_end': str(invoice.period_end),
                     'paid': str(invoice.paid_amount),
                     'balance': str(invoice.remaining_amount),
                     'status': invoice.get_status_display(),

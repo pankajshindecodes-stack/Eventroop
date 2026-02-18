@@ -403,7 +403,6 @@ class InvoiceBooking(models.Model):
     def save(self, *args, **kwargs):
         """
         Calculate subtotal and create invoices for new bookings.
-        NO SIGNALS - all logic is here.
         """
         skip_validation = kwargs.pop('skip_validation', False)
         skip_invoice_creation = kwargs.pop('skip_invoice_creation', False)
