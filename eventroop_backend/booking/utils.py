@@ -249,7 +249,7 @@ def generate_order_id(instance, created_by=None):
             alfa = "M"
         elif created_by.is_customer:
             alfa = "U"
-        else:
-            alfa = "X"
+        elif created_by.is_vsre_staff:
+            alfa = "T"
             
     return f"{alfa}{financial_year}{instance.id:05}"
