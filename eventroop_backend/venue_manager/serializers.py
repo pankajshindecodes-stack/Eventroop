@@ -61,6 +61,7 @@ class VenueSerializer(serializers.ModelSerializer):
             "id", "owner", "manager", "staff",
             "name", "description",
 
+            "location_type",
             "building_name",
             "address_line1",
             "address_line2",
