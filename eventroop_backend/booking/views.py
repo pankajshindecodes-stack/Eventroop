@@ -668,7 +668,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             target.save(update_fields=["status"], skip_update_auto_status=True)
 
             # If parent updated → sync children in single query
-            if not service_id:
+            if not service_booking_id:
                 booking.children.update(status=new_status)
 
         return Response({
