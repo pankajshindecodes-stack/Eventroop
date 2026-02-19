@@ -377,7 +377,6 @@ class InvoiceBooking(models.Model):
         """
         Calculate subtotal and create invoices for new bookings.
         """
-        skip_invoice_creation = kwargs.pop('skip_invoice_creation', False)
         skip_update_auto_status = kwargs.pop('skip_update_auto_status', False)
         if not skip_update_auto_status:
             self._update_status_automatically()
@@ -388,18 +387,23 @@ class InvoiceBooking(models.Model):
         
         super().save(*args, **kwargs)
         
-        # After save, handle invoice logic (only for new bookings)
-        if not skip_invoice_creation and self.pk:
-            # Check if this is a new booking (no invoices created yet)
-            if not self.invoices.exists():
-                # Only create invoices for VENUE or standalone SERVICE
-                if self.parent is None and self.booking_entity in ['VENUE', 'SERVICE']:
-                    try:
-                        self._create_monthly_invoices()
-                    except Exception as e:
-                        # Log but don't fail the save
-                       pass
-    
+        # Only create for fulfilled statuses
+        if self.status not in {
+            BookingStatus.FULFILLED,
+            BookingStatus.PARTIALLY_FULFILLED,
+        }:
+            return
+
+        # Only for standalone bookings
+        if self.parent is not None:
+            return
+
+        # Avoid duplicate invoices
+        if self.invoices.exists():
+            return
+        self._create_monthly_invoices()
+        
+
     def _update_status_automatically(self):
         now = timezone.now()
 
@@ -533,7 +537,7 @@ class InvoiceBooking(models.Model):
             # Update self
             self.status = BookingStatus.CANCELLED
             self.subtotal = Decimal("0.00")
-            self.save(update_fields=["status", "subtotal"], skip_validation=True, skip_invoice_creation=True)
+            self.save(update_fields=["status", "subtotal"])
             
             # Update associated invoices
             invoices = TotalInvoice.objects.filter(booking=self)
@@ -582,7 +586,7 @@ class InvoiceBooking(models.Model):
             if premium_amount:
                 self.premium_amount = premium_amount
 
-            self.save(skip_invoice_creation=True,skip_update_auto_status=True)
+            self.save(skip_update_auto_status=True)
 
             self._recalculate_invoices()
 
@@ -594,7 +598,7 @@ class InvoiceBooking(models.Model):
                     if child.start_datetime > now:
                         child.start_datetime += time_diff
                         child.end_datetime += time_diff
-                        child.save(skip_invoice_creation=True)
+                        child.save()
                         child._recalculate_invoices()
 
     def _recalculate_invoices(self):
