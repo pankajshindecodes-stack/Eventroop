@@ -22,6 +22,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='totalinvoice',
             name='invoice_number',
-            field=models.CharField(db_index=True, default=booking.models.TotalInvoice.generate_invoice_number, help_text='Unique invoice identifier', max_length=50, unique=True),
+            field=models.CharField(db_index=True, help_text='Unique invoice identifier', max_length=50, unique=True),
         ),
     ]

@@ -699,13 +699,10 @@ class TotalInvoice(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
-    def generate_invoice_number():
-        return f"INV-{uuid.uuid4().hex[:10].upper()}"
-    
     invoice_number = models.CharField(
         max_length=50,
         unique=True,
-        default=generate_invoice_number
+        blank=True
     )
 
     class Meta:
@@ -717,7 +714,21 @@ class TotalInvoice(models.Model):
 
     def __str__(self):
         return f"{self.invoice_number} - {self.period_start.date()} to {self.period_end.date()}"
+    
+    def save(self, *args, **kwargs):
+        from .utils import generate_order_id
 
+        is_new = self.pk is None
+
+        super().save(*args, **kwargs)  # Save first to get PK
+
+        if is_new and not self.invoice_number:
+            self.invoice_number = "INV"+ generate_order_id(
+                instance=self,
+                created_by=self.user
+            )
+            super().save(update_fields=["invoice_number"])
+        
     def recalculate_totals(self):
         """
         Recalculate invoice total amount based on current booking and children.

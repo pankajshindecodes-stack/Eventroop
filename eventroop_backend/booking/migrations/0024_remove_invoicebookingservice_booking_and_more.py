@@ -202,7 +202,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='totalinvoice',
             name='invoice_number',
-            field=models.CharField(default=booking.models.TotalInvoice.generate_invoice_number, max_length=50, unique=True),
+            field=models.CharField(max_length=50, unique=True),
         ),
         migrations.AlterField(
             model_name='totalinvoice',
