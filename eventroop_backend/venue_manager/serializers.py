@@ -29,7 +29,8 @@ class LocationMiniSerializer(serializers.ModelSerializer):
             "locality",
             "city",
             "state",
-            "postal_code"
+            "postal_code",
+            "location_type"
         ]
 
 
