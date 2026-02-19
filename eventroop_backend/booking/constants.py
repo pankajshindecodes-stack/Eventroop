@@ -48,6 +48,7 @@ MANUAL_STATUS_TRANSITIONS = {
     ],
     BookingStatus.HOLD: [
         BookingStatus.BOOKED,
+        BookingStatus.IN_PROGRESS,
         BookingStatus.CANCELLED,
     ],
     BookingStatus.UNFULFILLED: [

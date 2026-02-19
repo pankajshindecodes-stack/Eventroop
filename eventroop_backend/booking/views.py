@@ -625,7 +625,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["patch"])
     def change_status(self, request, pk=None):
         booking = self.get_object()
-        service_id = request.data.get("service_id")
+        service_id = request.data.get("service_booking_id")
         new_status = request.data.get("status")
 
         if not new_status:
@@ -643,11 +643,11 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         # Determine target instance (parent or child)
         target = booking
 
-        if service_id:
-            target = booking.children.filter(id=service_id).first()
+        if service_booking_id:
+            target = booking.children.filter(id=service_booking_id).first()
             if not target:
                 return Response(
-                    {"error": "Invalid service_id"},
+                    {"error": "Invalid service_booking_id"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
