@@ -625,7 +625,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["patch"])
     def change_status(self, request, pk=None):
         booking = self.get_object()
-        service_id = request.data.get("service_booking_id")
+        service_booking_id = request.data.get("service_booking_id")
         new_status = request.data.get("status")
 
         if not new_status:
