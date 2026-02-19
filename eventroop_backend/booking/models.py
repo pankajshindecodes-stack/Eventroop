@@ -388,20 +388,17 @@ class InvoiceBooking(models.Model):
         super().save(*args, **kwargs)
         
         # Only create for fulfilled statuses
-        if self.status not in {
+        if self.status in {
             BookingStatus.FULFILLED,
             BookingStatus.PARTIALLY_FULFILLED,
         }:
-            return
-
-        # Only for standalone bookings
-        if self.parent is not None:
-            return
-
-        # Avoid duplicate invoices
-        if self.invoices.exists():
-            return
-        self._create_monthly_invoices()
+            print(f"status : {self.status}")
+            if self.parent is None:
+                print(f"parent: {self.parent}")
+                if not self.invoices.exists():
+                    print(f"Creating invoice for {self.id}")
+                    self._create_monthly_invoices()
+            
         
 
     def _update_status_automatically(self):
@@ -549,7 +546,14 @@ class InvoiceBooking(models.Model):
                     # Recalculate with cancelled booking
                     invoice.recalculate_totals()
 
-    def reschedule(self, new_start_datetime, new_end_datetime, new_package_id=None,discount_amount=None,premium_amount=None):
+    def reschedule(
+        self,
+        new_start_datetime,
+        new_end_datetime,
+        new_package_id=None,
+        discount_amount=None,
+        premium_amount=None
+    ):
         now = timezone.now()
 
         if new_start_datetime >= new_end_datetime:

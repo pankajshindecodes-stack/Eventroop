@@ -43,6 +43,7 @@ class VenueSerializer(serializers.ModelSerializer):
     staff = UserMiniSerializer(many=True, read_only=True)
 
     # Write-only flat fields (input)
+    location_type = serializers.CharField(write_only=True)
     building_name = serializers.CharField(write_only=True)
     address_line1 = serializers.CharField(write_only=True)
     address_line2 = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -100,7 +101,7 @@ class VenueSerializer(serializers.ModelSerializer):
             "city": validated_data.pop("city"),
             "state": validated_data.pop("state"),
             "postal_code": validated_data.pop("postal_code"),
-            "location_type": "OPD",
+            "location_type": validated_data.pop("location_type"),
             "user": request.user,
         }
 
