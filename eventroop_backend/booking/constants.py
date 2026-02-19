@@ -17,13 +17,44 @@ class BookingEntity(models.TextChoices):
 
 class BookingStatus(models.TextChoices):
     DRAFT = 'DRAFT', 'Draft'
+    HOLD = 'HOLD', 'Hold'
     BOOKED = 'BOOKED', 'Booked'
     DELAYED = 'DELAYED', 'Delayed'
     CANCELLED = 'CANCELLED', 'Cancelled'
     FULFILLED = 'FULFILLED', 'Fulfilled'
+    UNFULFILLED = 'UNFULFILLED', 'Unfulfilled'
     IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
-    YET_TO_BE_STARTED = 'YET_TO_BE_STARTED', 'Yet To Be Started'
+    YET_TO_START = 'YET_TO_START', 'Yet To Start'
     PARTIALLY_FULFILLED = 'PARTIALLY_FULFILLED', 'Partially Fulfilled'
+
+MANUAL_STATUS_TRANSITIONS = {
+    BookingStatus.DRAFT: [
+        BookingStatus.BOOKED,
+        BookingStatus.CANCELLED,
+    ],
+    BookingStatus.BOOKED: [
+        BookingStatus.CANCELLED,
+        BookingStatus.HOLD,
+        BookingStatus.DELAYED,
+    ],
+    BookingStatus.YET_TO_START: [
+        BookingStatus.CANCELLED,
+        BookingStatus.HOLD,
+    ],
+    BookingStatus.IN_PROGRESS: [
+        BookingStatus.CANCELLED,
+        BookingStatus.UNFULFILLED,
+        BookingStatus.PARTIALLY_FULFILLED,
+    ],
+    BookingStatus.HOLD: [
+        BookingStatus.BOOKED,
+        BookingStatus.CANCELLED,
+    ],
+    BookingStatus.UNFULFILLED: [
+        BookingStatus.FULFILLED,
+        BookingStatus.PARTIALLY_FULFILLED,
+    ],
+}
 
 class InvoiceStatus(models.TextChoices):
     UNPAID = 'UNPAID', 'Unpaid'

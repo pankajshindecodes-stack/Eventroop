@@ -336,7 +336,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             'package',
             'parent'
         ).prefetch_related('children', 'invoices')
-
+        
         if user.is_customer:
             queryset = queryset.filter(user=user)
 
@@ -382,7 +382,6 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         
         # Set defaults
         serializer.validated_data['user'] = request.user
-        serializer.validated_data['status'] = BookingStatus.BOOKED
         serializer.validated_data['booking_type'] = BookingType.IN_HOUSE
         serializer.validated_data['booking_entity'] = BookingEntity.VENUE
         
@@ -395,6 +394,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def add_service(self, request, pk=None):
         """
         Add a service booking as a child to a venue booking.
@@ -410,7 +410,12 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         }
         """
         parent = self.get_object()
-        
+        if parent.status == BookingStatus.CANCELLED:
+            return Response(
+                {"message": "Cannot add service to cancelled booking"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         serializer = ServiceBookingCreateSerializer(
             data=request.data,
             context={"parent": parent},
@@ -499,13 +504,18 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             "start_datetime": "2026-03-01T10:00:00Z",
             "end_datetime": "2026-05-31T18:00:00Z",
             "package": 3  # Optional
+            "discount_amount":100.0,
+            "premium_amount":0.0
         }
         """
         booking = self.get_object()
         
         new_start = request.data.get("start_datetime")
         new_end = request.data.get("end_datetime")
+        # optinal
         new_package = request.data.get("package")
+        discount_amount = request.data.get("discount_amount",Decimal('0'))
+        premium_amount = request.data.get("premium_amount",Decimal('0'))
 
         if not new_start or not new_end:
             return Response(
@@ -521,7 +531,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
                 raise ValueError("Invalid datetime format")
             
             # Model's reschedule method handles everything
-            booking.reschedule(new_start_dt, new_end_dt, new_package)
+            booking.reschedule(new_start_dt, new_end_dt, new_package,discount_amount,premium_amount)
         except ValidationError as e:
             return Response(
                 {"message": str(e)},
@@ -556,7 +566,10 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         service_id = request.data.get("service_id")
         new_start = request.data.get("start_datetime")
         new_end = request.data.get("end_datetime")
+        # optinal
         new_package = request.data.get("package")
+        discount_amount = request.data.get("discount_amount",Decimal('0'))
+        premium_amount = request.data.get("premium_amount",Decimal('0'))
 
         if not new_start or not new_end:
             return Response(
@@ -580,7 +593,7 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
                 raise ValueError("Invalid datetime format")
             
             # Model's reschedule method handles everything
-            child.reschedule(new_start_dt, new_end_dt, new_package)
+            child.reschedule(new_start_dt, new_end_dt, new_package,discount_amount,premium_amount)
         except ValidationError as e:
             return Response(
                 {"message": str(e)},
@@ -608,6 +621,61 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         service_bookings = self.get_queryset().filter(booking_entity='SERVICE')
         serializer = InvoiceBookingSerializer(service_bookings, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["patch"])
+    def change_status(self, request, pk=None):
+        booking = self.get_object()
+        service_id = request.data.get("service_id")
+        new_status = request.data.get("status")
+
+        if not new_status:
+            return Response(
+                {"error": "Status is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_status not in BookingStatus.values:
+            return Response(
+                {"error": "Invalid status"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Determine target instance (parent or child)
+        target = booking
+
+        if service_id:
+            target = booking.children.filter(id=service_id).first()
+            if not target:
+                return Response(
+                    {"error": "Invalid service_id"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Validate transition
+        available_statuses = MANUAL_STATUS_TRANSITIONS.get(target.status, [])
+
+        if new_status not in available_statuses:
+            return Response(
+                {
+                    "error": f"Cannot change status from {target.status} to {new_status}"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            # Update target
+            target.status = new_status
+            target.save(update_fields=["status"], skip_update_auto_status=True)
+
+            # If parent updated → sync children in single query
+            if not service_id:
+                booking.children.update(status=new_status)
+
+        return Response({
+            "message": "Status updated successfully",
+            "booking_id": target.id,
+            "new_status": new_status
+        })
 
     @action(detail=True, methods=['get'])
     def invoice_info(self, request, pk=None):

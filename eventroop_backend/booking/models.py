@@ -373,46 +373,15 @@ class InvoiceBooking(models.Model):
             f"{entity}"
         )
 
-    
-    def clean(self):
-        """
-        Comprehensive validation including dates and parent-child relationships.
-        """
-        errors = {}
-        
-        # Entity-specific validation
-        if self.booking_entity == "VENUE" and not self.venue:
-            errors['venue'] = "Venue booking requires venue."
-
-        if self.booking_entity == "SERVICE" and not self.service:
-            errors['service'] = "Service booking requires service."
-        
-        # Date validation
-        if self.start_datetime >= self.end_datetime:
-            errors['start_datetime'] = "Start date must be before end date."
-        
-        # Parent-child date validation
-        if self.parent:
-            if (self.start_datetime < self.parent.start_datetime or 
-                self.end_datetime > self.parent.end_datetime):
-                errors['start_datetime'] = (
-                    "Child booking dates must be within parent booking dates."
-                )
-        
-        if errors:
-            raise ValidationError(errors)
-
     def save(self, *args, **kwargs):
         """
         Calculate subtotal and create invoices for new bookings.
         """
-        skip_validation = kwargs.pop('skip_validation', False)
         skip_invoice_creation = kwargs.pop('skip_invoice_creation', False)
-        
-        # Only validate on explicit creation/update, not from internal calls
-        if not skip_validation:
-            self.full_clean()
-        
+        skip_update_auto_status = kwargs.pop('skip_update_auto_status', False)
+        if not skip_update_auto_status:
+            self._update_status_automatically()
+            
         # Calculate subtotal
         subtotal = self._calculate_subtotal()
         self.subtotal = (subtotal - self.discount_amount) + self.premium_amount
@@ -429,12 +398,19 @@ class InvoiceBooking(models.Model):
                         self._create_monthly_invoices()
                     except Exception as e:
                         # Log but don't fail the save
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.error(
-                            f"Error creating monthly invoices for booking {self.id}: {str(e)}",
-                            exc_info=True
-                        )
+                       pass
+    
+    def _update_status_automatically(self):
+        now = timezone.now()
+
+        if now < self.start_datetime:
+            self.status = BookingStatus.YET_TO_START
+
+        elif self.start_datetime <= now <= self.end_datetime:
+            self.status = BookingStatus.IN_PROGRESS
+
+        elif now > self.end_datetime:
+            self.status = BookingStatus.UNFULFILLED
 
     def _calculate_subtotal(self):
         """Calculate base subtotal before discounts/premiums."""
@@ -569,54 +545,57 @@ class InvoiceBooking(models.Model):
                     # Recalculate with cancelled booking
                     invoice.recalculate_totals()
 
-    def reschedule(self, new_start_datetime, new_end_datetime, new_package_id=None):
-        """
-        Reschedule the booking and optionally change package.
-        Automatically updates invoices and shifts child services.
-        
-        Args:
-            new_start_datetime: New start datetime
-            new_end_datetime: New end datetime
-            new_package_id: Optional new package ID
-        
-        Raises:
-            ValidationError: If booking can't be rescheduled
-        """
+    def reschedule(self, new_start_datetime, new_end_datetime, new_package_id=None,discount_amount=None,premium_amount=None):
         now = timezone.now()
-        
-        # Only upcoming bookings can be rescheduled
-        if self.start_datetime <= now:
-            raise ValidationError("Only upcoming bookings can be rescheduled")
-        
+
         if new_start_datetime >= new_end_datetime:
             raise ValidationError("Start date must be before end date")
+
+        is_ongoing = self.start_datetime <= now <= self.end_datetime
+        is_upcoming = self.start_datetime > now
+        is_past = self.end_datetime < now
         
+        # Past booking cannot be modified
+        if is_past:
+            raise ValidationError("Past bookings cannot be modified")
+
+        # Ongoing booking rules
+        if is_ongoing:
+
+            # Allow only end date change
+            if new_start_datetime != self.start_datetime:
+                raise ValidationError(
+                    "Start date cannot be modified for partially fulfilled booking"
+                )
+
+        # Upcoming → allow full modification
         with transaction.atomic():
             old_start = self.start_datetime
-            
-            # Update booking
+
             self.start_datetime = new_start_datetime
             self.end_datetime = new_end_datetime
-            
+
             if new_package_id:
                 self.package_id = new_package_id
-            
-            self.save(skip_invoice_creation=True)
-            
-            # Recalculate associated invoices
+            if discount_amount:
+                self.discount_amount = discount_amount
+            if premium_amount:
+                self.premium_amount = premium_amount
+
+            self.save(skip_invoice_creation=True,skip_update_auto_status=True)
+
             self._recalculate_invoices()
-            
-            # Shift child services
-            time_diff = new_start_datetime - old_start
-            
-            for child in self.children.all():
-                if child.start_datetime > now:  # Only upcoming services
-                    child.start_datetime += time_diff
-                    child.end_datetime += time_diff
-                    child.save(skip_invoice_creation=True)
-                    
-                    # Recalculate child's invoices
-                    child._recalculate_invoices()
+
+            # Shift children if start changed
+            if new_start_datetime != old_start:
+                time_diff = new_start_datetime - old_start
+
+                for child in self.children.all():
+                    if child.start_datetime > now:
+                        child.start_datetime += time_diff
+                        child.end_datetime += time_diff
+                        child.save(skip_invoice_creation=True)
+                        child._recalculate_invoices()
 
     def _recalculate_invoices(self):
         """Recalculate all associated invoices."""

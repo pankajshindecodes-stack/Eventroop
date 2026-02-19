@@ -377,15 +377,27 @@ class InvoiceBookingCreateSerializer(serializers.ModelSerializer):
         }
     
     def validate(self, data):
-        """Validate booking entity and required fields"""
-        
+        """
+        Validate datetime range safely for create & update.
+        """
+
+        # Use instance fallback for partial update
+        start_datetime = data.get(
+            "start_datetime",
+            getattr(self.instance, "start_datetime", None)
+        )
+        end_datetime = data.get(
+            "end_datetime",
+            getattr(self.instance, "end_datetime", None)
+        )
+
         # Validate datetime range
-        if data.get('start_datetime') and data.get('end_datetime'):
-            if data['start_datetime'] >= data['end_datetime']:
-                raise serializers.ValidationError(
-                    {"start_datetime": "Start datetime must be before end datetime."}
-                )
-        
+        if start_datetime and end_datetime:
+            if start_datetime >= end_datetime:
+                raise serializers.ValidationError({
+                    "start_datetime": "Start datetime must be before end datetime."
+                })
+
         return data
 
 class ServiceBookingCreateSerializer(serializers.ModelSerializer):
@@ -410,16 +422,56 @@ class ServiceBookingCreateSerializer(serializers.ModelSerializer):
         parent = self.context.get("parent")
 
         if not parent:
-            raise serializers.ValidationError("Parent booking missing.")
+            raise serializers.ValidationError({
+                "parent": "Parent booking missing."
+            })
 
-        if parent.booking_entity != BookingEntity.VENUE:
-            raise serializers.ValidationError("Parent must be VENUE booking.")
+        # Use instance fallback for update cases
+        service = attrs.get(
+            "service",
+            getattr(self.instance, "service", None)
+        )
 
-        if not attrs.get("service"):
-            raise serializers.ValidationError("Service is required.")
+        booking_entity = getattr(parent, "booking_entity", None)
+
+        #  Parent must be VENUE
+        if booking_entity != BookingEntity.VENUE:
+            raise serializers.ValidationError({
+                "parent": "Parent must be VENUE booking."
+            })
+
+        #  Service required
+        if not service:
+            raise serializers.ValidationError({
+                "service": "Service is required."
+            })
+
+        #  Child date validation (important)
+        start_datetime = attrs.get(
+            "start_datetime",
+            getattr(self.instance, "start_datetime", None)
+        )
+        end_datetime = attrs.get(
+            "end_datetime",
+            getattr(self.instance, "end_datetime", None)
+        )
+
+        if start_datetime and end_datetime:
+            if start_datetime >= end_datetime:
+                raise serializers.ValidationError({
+                    "start_datetime": "Start must be before end."
+                })
+
+            if (
+                start_datetime < parent.start_datetime or
+                end_datetime > parent.end_datetime
+            ):
+                raise serializers.ValidationError({
+                    "start_datetime": "Service booking must be within Venue booking dates."
+                })
 
         return attrs
-
+    
     @transaction.atomic
     def create(self, validated_data):
         parent = self.context["parent"]
@@ -428,7 +480,6 @@ class ServiceBookingCreateSerializer(serializers.ModelSerializer):
         validated_data["patient"] = parent.patient
         validated_data["booking_entity"] = BookingEntity.SERVICE
         validated_data["booking_type"] = BookingType.OPD
-        validated_data["status"] = BookingStatus.BOOKED
         return InvoiceBooking.objects.create(**validated_data)
 
 class InvoiceSummarySerializer(serializers.Serializer):
