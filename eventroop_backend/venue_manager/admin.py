@@ -1,100 +1,69 @@
 from django.contrib import admin
 from django.contrib.contenttypes.admin import GenericTabularInline
-from django.utils.html import format_html
+from .models import Venue, Service, Resource, Photos
 
-from .models import Photos, Venue, Service, Resource
 
-class PhotosInline(GenericTabularInline):
+# -------------------- Generic Photo Inline --------------------
+
+class PhotoInline(GenericTabularInline):
     model = Photos
     extra = 1
-    fields = ("image", "is_primary", "preview")
-    readonly_fields = ("preview",)
+    fields = ("image", "is_primary", "uploaded_at")
+    readonly_fields = ("uploaded_at",)
 
-    def preview(self, obj):
-        if obj.image:
-            return format_html(
-                '<img src="{}" width="80" height="80" style="object-fit:cover;border-radius:4px;" />',
-                obj.image.url,
-            )
-        return "-"
-    preview.short_description = "Preview"
 
+# -------------------- Venue Admin --------------------
 @admin.register(Venue)
 class VenueAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "name",
         "owner",
-        "get_city",
+        "capacity",
         "is_active",
         "is_deleted",
         "created_at",
     )
-
-    list_filter = (
-        "is_active",
-        "is_deleted",
-        "location__city",
-    )
-
-    search_fields = (
-        "name",
-        "location__city",
-        "location__address",
-    )
-
-    ordering = ("-created_at",)
+    list_filter = ("is_active", "is_deleted", "created_at")
+    search_fields = ("name", "owner__email", "owner__first_name")
+    autocomplete_fields = ("owner",)
+    filter_horizontal = ("manager", "staff")
+    inlines = [PhotoInline]
 
     readonly_fields = ("created_at", "updated_at")
 
-    filter_horizontal = ("manager", "staff")
-
-    inlines = [PhotosInline]
-
-    # --------------------------------------------------------
-    # DISPLAY LOCATION FIELDS
-    # --------------------------------------------------------
-    def get_city(self, obj):
-        return obj.location.city if obj.location else "-"
-    get_city.short_description = "City"
-    get_city.admin_order_field = "location__city"
-
-    def get_address(self, obj):
-        return obj.location.address if obj.location else "-"
-    get_address.short_description = "Address"
-
-    # --------------------------------------------------------
-    # FIELDSETS
-    # --------------------------------------------------------
     fieldsets = (
-        ("Basic Information", {
-            "fields": ("name", "description", "logo")
-        }),
-        ("Location", {
-            "fields": ("location",)   # one-to-one editable
+        ("Basic Info", {
+            "fields": ("name", "description", "logo", "location")
         }),
         ("Ownership", {
             "fields": ("owner", "manager", "staff")
         }),
-        ("Contact", {
+        ("Contact Info", {
             "fields": ("contact", "website", "social_links")
         }),
         ("Capacity & Pricing", {
             "fields": ("capacity", "price_per_event", "rooms", "floors")
         }),
-        ("Amenities", {
-            "fields": ("amenities", "seating_arrangement")
-        }),
-        ("Permissions", {
-            "fields": ("external_decorators_allow", "external_caterers_allow")
-        }),
-        ("Status", {
-            "fields": ("is_active", "is_deleted")
+        ("Settings", {
+            "fields": (
+                "parking_slots",
+                "external_decorators_allow",
+                "external_caterers_allow",
+                "amenities",
+                "seating_arrangement",
+                "is_active",
+                "is_deleted",
+            )
         }),
         ("Timestamps", {
             "fields": ("created_at", "updated_at")
         }),
     )
+
+
+# -------------------- Service Admin --------------------
+
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
     list_display = (
@@ -103,68 +72,63 @@ class ServiceAdmin(admin.ModelAdmin):
         "owner",
         "city",
         "is_active",
+        "is_deleted",
         "created_at",
     )
-    list_filter = ("is_active", "city")
-    search_fields = ("name", "description")
-    ordering = ("-created_at",)
+    list_filter = ("city", "is_active", "is_deleted")
+    search_fields = ("name", "city", "owner__email")
+    autocomplete_fields = ("owner",)
+    filter_horizontal = ("manager", "staff", "venue")
+    inlines = [PhotoInline]
 
     readonly_fields = ("created_at", "updated_at")
 
-    filter_horizontal = ("manager", "staff","venue")
-    inlines = [PhotosInline]
-
     fieldsets = (
-        ("Basic Information", {
+        ("Basic Info", {
             "fields": ("name", "description", "logo")
-        }),
-        ("Location", {
-            "fields": ("address", "city")
         }),
         ("Ownership", {
             "fields": ("owner", "manager", "staff")
         }),
+        ("Location", {
+            "fields": ("address", "city", "venue")
+        }),
         ("Contact", {
             "fields": ("contact", "website")
         }),
-        ("Relations", {
-            "fields": ("venue",)
-        }),
-        ("Tags & Extra Info", {
-            "fields": ("tags", "quick_info")
-        }),
-        ("Status", {
-            "fields": ("is_active", "is_deleted")
+        ("Extra Info", {
+            "fields": ("tags", "quick_info", "is_active", "is_deleted")
         }),
         ("Timestamps", {
             "fields": ("created_at", "updated_at")
         }),
     )
+
+
+# -------------------- Resource Admin --------------------
+
 @admin.register(Resource)
 class ResourceAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "name",
         "owner",
+        "total_quantity",
         "available_quantity",
         "is_active",
         "created_at",
     )
-    list_filter = ("is_active",)
-    search_fields = ("name", "description")
-    ordering = ("-created_at",)
+    list_filter = ("is_active", "created_at")
+    search_fields = ("name", "owner__email")
+    autocomplete_fields = ("owner", "venue", "service")
+    filter_horizontal = ("manager", "staff")
+    inlines = [PhotoInline]
 
     readonly_fields = ("created_at", "updated_at")
 
-    filter_horizontal = ("manager", "staff")
-    inlines = [PhotosInline]
-
     fieldsets = (
-        ("Basic Information", {
-            "fields": ("name", "description")
-        }),
-        ("Location", {
-            "fields": ("address",)
+        ("Basic Info", {
+            "fields": ("name", "description", "address")
         }),
         ("Ownership", {
             "fields": ("owner", "manager", "staff")
@@ -180,34 +144,20 @@ class ResourceAdmin(admin.ModelAdmin):
         ("Relations", {
             "fields": ("venue", "service")
         }),
-        ("Tags", {
-            "fields": ("tags",)
-        }),
-        ("Status", {
-            "fields": ("is_active",)
+        ("Extra", {
+            "fields": ("tags", "is_active")
         }),
         ("Timestamps", {
             "fields": ("created_at", "updated_at")
         }),
     )
 
+
+# -------------------- Photos Admin (Optional standalone) --------------------
+
 @admin.register(Photos)
 class PhotosAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "content_object",
-        "is_primary",
-        "uploaded_at",
-        "preview",
-    )
-    list_filter = ("is_primary",)
-    readonly_fields = ("uploaded_at", "preview")
-
-    def preview(self, obj):
-        if obj.image:
-            return format_html(
-                '<img src="{}" width="80" height="80" style="object-fit:cover;" />',
-                obj.image.url,
-            )
-        return "-"
-    preview.short_description = "Preview"
+    list_display = ("id", "content_type", "object_id", "is_primary", "uploaded_at")
+    list_filter = ("content_type", "is_primary")
+    search_fields = ("object_id",)
+    readonly_fields = ("uploaded_at",)

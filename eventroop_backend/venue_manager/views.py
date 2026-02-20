@@ -16,20 +16,17 @@ from accounts.serializers import (
 from .models import *
 from .validations import *
 
-# --------------------------------------------------------
 # VENUE VIEWSET
-# --------------------------------------------------------
-
 class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     queryset = Venue.objects.select_related("owner", "location").prefetch_related(
             "manager", "staff", "photos"
         ).filter(is_deleted=False)
-    # --------------------------------------------------------
+    
     # FILTERS (use related location fields)
-    # --------------------------------------------------------
     filterset_fields = {
+        "location": ["exact"],
         "location__city": ["iexact", "icontains"],
         "location__state": ["iexact", "icontains"],
         "is_active": ["exact"],
@@ -43,10 +40,8 @@ class VenueViewSet(viewsets.ModelViewSet):
         "external_decorators_allow": ["exact"],
         "external_caterers_allow": ["exact"],
     }
-
-    # --------------------------------------------------------
+    
     # SEARCH (use related location fields)
-    # --------------------------------------------------------
     search_fields = [
         "name",
         "description",
@@ -58,10 +53,7 @@ class VenueViewSet(viewsets.ModelViewSet):
         "location__state",
     ]
 
-
-    # --------------------------------------------------------
-    # QUERYSET BASED ON USER ROLE
-    # --------------------------------------------------------
+    # QUERYSET BASED ON USER ROLE   
     def get_queryset(self):
         user = self.request.user
         qs = self.queryset.order_by("-created_at")
@@ -74,19 +66,16 @@ class VenueViewSet(viewsets.ModelViewSet):
             return qs.filter(manager=user)
         elif user.is_staff_user_type:
             return qs.filter(staff=user)
-
-    # --------------------------------------------------------
-    # CREATE → OWNER ONLY
-    # --------------------------------------------------------
+    
+    # CREATE → OWNER ONLY    
     def perform_create(self, serializer):
         user = self.request.user
         if not user.is_owner:
             raise PermissionDenied("Only owners can create venues.")
         serializer.save(owner=user, is_active=True)
 
-    # --------------------------------------------------------
+    
     # SOFT DELETE
-    # --------------------------------------------------------
     def perform_destroy(self, instance):
         if hasattr(instance, "soft_delete"):
             instance.soft_delete()
@@ -95,11 +84,10 @@ class VenueViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def venue_dropdown(self,request):
-        queryset = self.get_queryset()
+        queryset = self.filter_queryset(self.get_queryset())
         return Response(VenueDropdownSerializer(queryset,many=True).data)
-# --------------------------------------------------------
+
 # SERVICE VIEWSET
-# --------------------------------------------------------
 class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -120,9 +108,9 @@ class ServiceViewSet(viewsets.ModelViewSet):
         "contact",
     ]
 
-    # --------------------------------------------------------
+    
     # FILTER SERVICES BASED ON user_type
-    # --------------------------------------------------------
+    
     def get_queryset(self):
         user = self.request.user
 
@@ -138,19 +126,14 @@ class ServiceViewSet(viewsets.ModelViewSet):
         if user.is_vsre_staff: 
             return Service.objects.filter(staff=user, is_deleted=False)
 
-
-    # --------------------------------------------------------
     # CREATE WITH OWNER
-    # --------------------------------------------------------
     def perform_create(self, serializer):
         user = self.request.user
         if not user.is_owner:
             raise PermissionDenied("Only owners can create services.")
         serializer.save(owner=user, is_active=True)
 
-    # --------------------------------------------------------
-    # SOFT DELETE
-    # --------------------------------------------------------
+    # SOFT DELETE   
     def perform_destroy(self, instance):
         if hasattr(instance, "soft_delete"):
             instance.soft_delete()
@@ -159,7 +142,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def service_dropdown(self,request):
-        queryset = self.get_queryset()
+        queryset = self.filter_queryset(self.get_queryset())
         return Response(ServiceDropdownSerializer(queryset,many=True).data)
 
 class EntityAssignUsersAPI(views.APIView):

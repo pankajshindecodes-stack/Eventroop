@@ -26,6 +26,8 @@ class BookingStatus(models.TextChoices):
     IN_PROGRESS = 'IN_PROGRESS', 'In Progress'
     YET_TO_START = 'YET_TO_START', 'Yet To Start'
     PARTIALLY_FULFILLED = 'PARTIALLY_FULFILLED', 'Partially Fulfilled'
+    MODIFIED = 'MODIFIED', 'Modified'
+    RESCHEDULED = 'RESCHEDULED', 'Rescheduled'
 
 MANUAL_STATUS_TRANSITIONS = {
     BookingStatus.DRAFT: [
@@ -40,11 +42,15 @@ MANUAL_STATUS_TRANSITIONS = {
     BookingStatus.YET_TO_START: [
         BookingStatus.CANCELLED,
         BookingStatus.HOLD,
+        BookingStatus.MODIFIED,
+        BookingStatus.RESCHEDULED,
     ],
     BookingStatus.IN_PROGRESS: [
         BookingStatus.CANCELLED,
         BookingStatus.UNFULFILLED,
         BookingStatus.PARTIALLY_FULFILLED,
+        BookingStatus.MODIFIED,
+        BookingStatus.RESCHEDULED,
     ],
     BookingStatus.HOLD: [
         BookingStatus.BOOKED,

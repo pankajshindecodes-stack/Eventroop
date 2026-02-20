@@ -66,10 +66,51 @@ class PatientMiniSerializer(serializers.ModelSerializer):
             "emergency_phone",
         ]
 
-class PackageSerializer(serializers.ModelSerializer):
+class PackageCreateSerializer(serializers.ModelSerializer):
     belongs_to_type = serializers.CharField(write_only=True)
-    belongs_to_detail = serializers.SerializerMethodField()
-    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
+
+    class Meta:
+        model = Package
+        fields = [
+            "name",
+            "description",
+            "package_type",
+            "price",
+            "is_active",
+            "object_id",
+            "belongs_to_type",
+        ]
+
+    def validate(self, attrs):
+        model_name = attrs.pop("belongs_to_type", None)
+
+        if not model_name:
+            raise serializers.ValidationError(
+                {"belongs_to_type": "This field is required."}
+            )
+
+        try:
+            content_type = ContentType.objects.get(
+                model=model_name.lower()
+            )
+            attrs["content_type"] = content_type
+        except ContentType.DoesNotExist:
+            raise serializers.ValidationError(
+                {"belongs_to_type": "Invalid model name."}
+            )
+
+        return attrs
+
+
+class PackageSerializer(serializers.ModelSerializer):
+    owner_name = serializers.CharField(
+        source="owner.get_full_name",
+        read_only=True
+    )
+    belongs_to_type = serializers.CharField(
+        source="content_type.model",
+        read_only=True
+    )
 
     class Meta:
         model = Package
@@ -84,57 +125,14 @@ class PackageSerializer(serializers.ModelSerializer):
             "is_active",
             "object_id",
             "belongs_to_type",
-            "belongs_to_detail",
         ]
 
         read_only_fields = [
             "id",
             "owner",
-            "owner_name",
-        ]
-        write_only_fields = [
             "object_id",
+            "belongs_to_type",
         ]
-    # Convert model name → content_type
-    def validate(self, attrs):
-        model_name = attrs.pop("belongs_to_type", None)
-
-        if model_name:
-            try:
-                content_type = ContentType.objects.get(model=model_name.lower())
-                attrs["content_type"] = content_type
-                
-            except ContentType.DoesNotExist:
-                raise serializers.ValidationError(
-                    {"belongs_to_type": "Invalid model name."}
-                )
-        if not attrs.get("content_type",None):
-            raise serializers.ValidationError(
-                {"belongs_to_type": "this field is required."}
-            )
-        return attrs
-    
-    def get_belongs_to_detail(self, obj):
-        if obj.belongs_to:
-            return {
-                "id": obj.object_id,
-                "type": obj.content_type.model,
-                "name": str(obj.belongs_to),
-            }
-        return None
-
-    def validate_owner(self, value):
-        if value.user_type != "VSRE_OWNER":
-            raise serializers.ValidationError("Owner must be a VSRE_OWNER user type.")
-        return value
-
-class PackageListSerializer(serializers.ModelSerializer):
-    belongs_to_type = serializers.CharField(source='content_type.model',read_only=True)
-    belong_to = serializers.CharField(source='belongs_to',read_only=True)
-
-    class Meta:
-        model = Package
-        fields = ["id", "name", "price", "is_active","package_type", "belong_to","belongs_to_type"]
 
 class PaymentSerializer(serializers.ModelSerializer):
     """Serializer for Payment model"""

@@ -187,8 +187,8 @@ class PackageViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_serializer_class(self):
-        if self.action == 'list':
-            return PackageListSerializer
+        if self.action == 'create':
+            return PackageCreateSerializer
         return PackageSerializer
 
     def get_queryset(self):
@@ -271,9 +271,7 @@ class PackageViewSet(viewsets.ModelViewSet):
 
         Model = ENTITY_MAP[content_type_name]
 
-        # ==================================================
         # CASE 1 → Only content_type → return entities (Service + Venue)
-        # ==================================================
         if not object_id:
             queryset = Model.objects.filter(owner=request.user, is_active=True)
 
@@ -281,9 +279,7 @@ class PackageViewSet(viewsets.ModelViewSet):
 
             return Response(data)
 
-        # ==================================================
         # CASE 2 → content_type + object_id → return packages
-        # ==================================================
         try:
             obj = Model.objects.get(
                 id=object_id,
@@ -299,7 +295,7 @@ class PackageViewSet(viewsets.ModelViewSet):
         # GenericRelation
         packages = obj.packages.all()
 
-        serializer = PackageListSerializer(packages, many=True)
+        serializer = PackageSerializer(packages, many=True)
         return Response(serializer.data)
 
 class InvoiceBookingViewSet(viewsets.ModelViewSet):
@@ -1015,8 +1011,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         
         try:
             invoice = TotalInvoice.objects.get(
-                id=invoice_id,
-                user=request.user
+                id=invoice_id
             )
         except TotalInvoice.DoesNotExist:
             return Response(
