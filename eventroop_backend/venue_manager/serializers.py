@@ -143,7 +143,7 @@ class VenueSerializer(serializers.ModelSerializer):
         logo = request.FILES.get("logo")
 
         # Update location fields
-        location_fields = ["building_name", "address_line1", "address_line2", "locality", "city", "state", "postal_code"]
+        location_fields = ["location_type","building_name", "address_line1", "address_line2", "locality", "city", "state", "postal_code"]
 
         for field in location_fields:
             if field in validated_data:
