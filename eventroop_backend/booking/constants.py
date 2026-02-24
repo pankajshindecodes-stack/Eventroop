@@ -8,6 +8,7 @@ class BookingType(models.TextChoices):
 class PeriodChoices(models.TextChoices):
     HOURLY = "HOURLY", "Hourly"
     DAILY = "DAILY", "Daily"
+    WEEKLY = "WEEKLY", "Weekly"
     MONTHLY = "MONTHLY", "Monthly"
 
 class BookingEntity(models.TextChoices):
