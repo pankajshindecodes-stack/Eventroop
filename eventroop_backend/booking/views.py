@@ -3,15 +3,11 @@ from venue_manager.serializers import VenueSerializer, ServiceSerializer
 from rest_framework import viewsets, permissions, status
 from .serializers import *
 from .models import *
-from .utils import generate_order_id
 from .filters import EntityFilter
-from django.db.models import Q, Sum, Count,Prefetch
-from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils.dateparse import parse_datetime
-from itertools import groupby
-from datetime import datetime, time
+from datetime import datetime, time, date
 
 class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -142,7 +138,6 @@ class PatientViewSet(viewsets.ModelViewSet):
 
         return Response(data,status=status.HTTP_200_OK)
     
-
 class LocationViewSet(viewsets.ModelViewSet):
     serializer_class = LocationSerializer
 
@@ -298,17 +293,18 @@ class PackageViewSet(viewsets.ModelViewSet):
         serializer = PackageSerializer(packages, many=True)
         return Response(serializer.data)
 
-class InvoiceBookingViewSet(viewsets.ModelViewSet):
+class OrderViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for managing invoice bookings.    
+    ViewSet for managing primary orders.
+
     Handles:
-    - Creating venue bookings (auto-creates monthly invoices)
-    - Creating service bookings as children
-    - Cancelling bookings (auto-cascades to invoices)
-    - Rescheduling bookings (auto-updates invoices)
+    - Creating venue bookings with full-range OR specific date/slot selection
+    - Adding service bookings as TernaryOrders
+    - Cancelling orders (cascades to Secondary & Ternary)
+    - Rescheduling orders (regenerates sub-orders)
     """
 
-    search_fields = ['patient__first_name', 'patient__last_name', 'booking_entity', 'status']  
+    search_fields = ['patient__first_name', 'patient__last_name', 'booking_entity', 'status']
     filterset_fields = {
         'patient': ['exact'],
         'start_datetime': ['month'],
@@ -316,85 +312,118 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
         'booking_type': ['exact'],
         'status': ['exact'],
     }
-
     ordering_fields = ['user', 'patient', 'created_at', 'start_datetime', 'end_datetime']
     ordering = ['-created_at']
-    
+
+    # ── Queryset ───────────────────────────────────────────────────────────────
     def get_queryset(self):
-        """Get bookings filtered by user and optional parameters"""
         user = self.request.user
-        queryset = InvoiceBooking.objects.filter(
-            parent__isnull=True
-        ).select_related(
-            'patient',
-            'venue',
-            'service',
-            'package',
-            'parent'
-        ).prefetch_related('children', 'invoices')
-        
+        queryset = PrimaryOrder.objects.select_related(
+            'patient', 'venue', 'service', 'package', 'user'
+        ).prefetch_related('secondary_orders__ternary_orders')
+
         if user.is_customer:
             queryset = queryset.filter(user=user)
 
-        ongoing = self.request.query_params.get('ongoing')
-        upcoming = self.request.query_params.get('upcoming')
-        past_order = self.request.query_params.get('past_order')
+        now = timezone.now()
 
-        now = timezone.now() 
-        if ongoing:
-            queryset = queryset.filter(
-                start_datetime__lte=now,
-                end_datetime__gte=now,
-            )
-        if upcoming:
+        if self.request.query_params.get('ongoing'):
+            queryset = queryset.filter(start_datetime__lte=now, end_datetime__gte=now)
+
+        if self.request.query_params.get('upcoming'):
             queryset = queryset.filter(start_datetime__gt=now)
 
-        if past_order:
+        if self.request.query_params.get('past_order'):
             queryset = queryset.filter(end_datetime__lt=now)
 
-        service_id = self.request.query_params.get("service_id")
+        service_id = self.request.query_params.get('service_id')
         if service_id:
-            queryset = queryset.filter(
-                Q(service=service_id) | Q(children__service=service_id) 
-            ).distinct()
-
+            queryset = queryset.filter(service=service_id)
 
         return queryset
-    
+
+    # ── Serializer ─────────────────────────────────────────────────────────────
     def get_serializer_class(self):
-        """Return appropriate serializer based on action"""
         if self.action == 'create':
-            return InvoiceBookingCreateSerializer
-        return InvoiceBookingSerializer
-    
+            return PrimaryOrderCreateSerializer
+        return PrimaryOrderSerializer
+
+    # ── Create ─────────────────────────────────────────────────────────────────
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         """
-        Create a new booking.
-        Automatically creates monthly invoices if booking spans multiple months.
+        Create a new PrimaryOrder.
+
+        Two modes based on payload:
+
+        Mode 1 — Full range (start_datetime + end_datetime only):
+            SecondaryOrders are auto-generated for every period in the full range.
+            {
+                "patient": 1,
+                "venue": 2,
+                "package": 3,
+                "start_datetime": "2026-03-01T00:00:00Z",
+                "end_datetime": "2026-05-31T23:59:59Z"
+            }
+
+        Mode 2 — Specific dates (DAILY package → list, HOURLY package → dict):
+            Only the provided dates/slots get SecondaryOrders.
+            DAILY:
+            {
+                "patient": 1,
+                "venue": 2,
+                "package": 3,
+                "dates": ["2026-03-01", "2026-03-05", "2026-03-10"]
+            }
+            HOURLY:
+            {
+                "patient": 1,
+                "venue": 2,
+                "package": 3,
+                "dates": {
+                    "2026-03-01": ["09:00:00", "10:00:00", "11:00:00"],
+                    "2026-03-05": ["14:00:00", "15:00:00"]
+                }
+            }
         """
+        raw_dates = request.data.get('dates')
+        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
-        # Set defaults
+
         serializer.validated_data['user'] = request.user
-        serializer.validated_data['booking_type'] = BookingType.IN_HOUSE
-        serializer.validated_data['booking_entity'] = BookingEntity.VENUE
+        serializer.validated_data['start_datetime'] = timezone.make_aware(datetime.combine(min(parsed_dates), time.min))
+        serializer.validated_data['end_datetime'] = timezone.make_aware(datetime.combine(max(parsed_dates), time.max))
         
-        # Save booking - this triggers invoice creation
-        booking = serializer.save()
-        booking.order_id = generate_order_id(instance=booking,created_by=request.user)
-        booking.save(update_fields=["order_id"])
+        if raw_dates:
+            date_keys = list(raw_dates.keys()) if isinstance(raw_dates, dict) else raw_dates
+            parsed_dates = [date.fromisoformat(d) for d in date_keys]
+            serializer.validated_data['start_datetime'] = timezone.make_aware(datetime.combine(min(parsed_dates), time.min))
+            serializer.validated_data['end_datetime'] = timezone.make_aware(datetime.combine(max(parsed_dates), time.max))
+        primary_order = serializer.save()
+            
+        # ── Decide generation mode ────────────────────────────────────────────
         
-        response_serializer = InvoiceBookingSerializer(booking)
+        if raw_dates:
+            # Mode 2: specific dates / slots
+            parsed = self.parse_dates(primary_order.package.period,raw_dates)
+            primary_order.generate_secondary_from_random_dates(parsed)
+        else:
+            # Mode 1: full range (start_datetime + end_datetime required by serializer)
+            primary_order.generate_secondary_full_range_dates()
+
+        response_serializer = PrimaryOrderSerializer(primary_order)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-    
+
+    # ── Add service (TernaryOrder) ──────────────────────────────────────────────
     @action(detail=True, methods=['post'])
     @transaction.atomic
     def add_service(self, request, pk=None):
         """
-        Add a service booking as a child to a venue booking.
-        
+        Add a service as a TernaryOrder under the appropriate SecondaryOrder.
+
+        The secondary_order is matched by the service's date range (month/year).
+
         Payload:
         {
             "service": 5,
@@ -405,280 +434,418 @@ class InvoiceBookingViewSet(viewsets.ModelViewSet):
             "premium_amount": "50.00"
         }
         """
-        parent = self.get_object()
-        if parent.status == BookingStatus.CANCELLED:
+        primary_order = self.get_object()
+
+        if primary_order.status == BookingStatus.CANCELLED:
             return Response(
-                {"message": "Cannot add service to cancelled booking"},
+                {"message": "Cannot add a service to a cancelled order."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        serializer = ServiceBookingCreateSerializer(
+        serializer = TernaryOrderCreateSerializer(
             data=request.data,
-            context={"parent": parent},
+            context={"primary_order": primary_order}
         )
-
         serializer.is_valid(raise_exception=True)
-        child_booking = serializer.save()
-        child_booking.order_id = generate_order_id(instance=child_booking,created_by=request.user)
-        child_booking.save(update_fields=["order_id"])
-        
-        # Recalculate parent invoices since child service was added
-        parent._recalculate_invoices()
-        
-        response_serializer = InvoiceBookingSerializer(child_booking)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-    
-    @action(detail=True, methods=['post'])
-    def cancel_venue(self, request, pk=None):
-        """
-        Cancel a venue booking and all its child bookings.
-        Automatically updates associated invoices.
-        """
-        booking = self.get_object()
-        
-        if booking.status == BookingStatus.CANCELLED:
-            return Response(
-                {'message': 'Booking is already cancelled'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Model's cancel() method handles everything
-        booking.cancel()
-        
-        serializer = InvoiceBookingSerializer(booking)
-        return Response(serializer.data)
-   
-    @action(detail=True, methods=['post'])
-    def cancel_service(self, request, pk=None):
-        """
-        Cancel a child service booking.
-        Automatically updates parent invoices.
-        
-        Payload:
-        {
-            "service_id": 22
-        }
-        """
-        parent = self.get_object()
-        
-        if parent.status == BookingStatus.CANCELLED:
-            return Response(
-                {'message': 'Booking is already cancelled'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        service_id = request.data.get('service_id')
-        if not service_id:
-            return Response(
-                {'message': 'service_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
+
+        start_dt = serializer.validated_data['start_datetime']
+        end_dt   = serializer.validated_data['end_datetime']
+
+        # Resolve the matching SecondaryOrder of start_dt
         try:
-            child_booking = parent.children.get(id=service_id)
-        except InvoiceBooking.DoesNotExist:
-            return Response(
-                {'message': 'Service not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Cancel child and recalculate parent invoices
-        child_booking.cancel()
-        parent._recalculate_invoices()
-        
-        return Response({'message': 'Service cancelled successfully'})
-
-    @action(detail=True, methods=['post'])
-    @transaction.atomic
-    def reschedule_venue(self, request, pk=None):
-        """
-        Reschedule venue booking with automatic child service shifting.
-        Automatically updates invoices.
-        
-        Payload:
-        {
-            "start_datetime": "2026-03-01T10:00:00Z",
-            "end_datetime": "2026-05-31T18:00:00Z",
-            "package": 3  # Optional
-            "discount_amount":100.0,
-            "premium_amount":0.0
-        }
-        """
-        booking = self.get_object()
-        
-        new_start = request.data.get("start_datetime")
-        new_end = request.data.get("end_datetime")
-        # optinal
-        new_package = request.data.get("package")
-        discount_amount = request.data.get("discount_amount",Decimal('0'))
-        premium_amount = request.data.get("premium_amount",Decimal('0'))
-
-        if not new_start or not new_end:
-            return Response(
-                {"message": "start_datetime and end_datetime are required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            new_start_dt = parse_datetime(new_start)
-            new_end_dt = parse_datetime(new_end)
-            
-            if not new_start_dt or not new_end_dt:
-                raise ValueError("Invalid datetime format")
-            
-            # Model's reschedule method handles everything
-            booking.reschedule(new_start_dt, new_end_dt, new_package,discount_amount,premium_amount)
-        except ValidationError as e:
-            return Response(
-                {"message": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except (ValueError, TypeError) as e:
-            return Response(
-                {"message": f"Invalid input: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        serializer = InvoiceBookingSerializer(booking)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['post'])
-    @transaction.atomic
-    def reschedule_service(self, request, pk=None):
-        """
-        Reschedule a single service child booking.
-        Automatically updates its invoices.
-        
-        Payload:
-        {
-            "service_id": 5,
-            "start_datetime": "2026-02-10T10:00:00Z",
-            "end_datetime": "2026-02-10T12:00:00Z",
-            "package": 2  # Optional
-        }
-        """
-        parent = self.get_object()
-        
-        service_id = request.data.get("service_id")
-        new_start = request.data.get("start_datetime")
-        new_end = request.data.get("end_datetime")
-        # optinal
-        new_package = request.data.get("package")
-        discount_amount = request.data.get("discount_amount",Decimal('0'))
-        premium_amount = request.data.get("premium_amount",Decimal('0'))
-
-        if not new_start or not new_end:
-            return Response(
-                {"message": "start_datetime and end_datetime are required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            child = parent.children.get(id=service_id)
-        except InvoiceBooking.DoesNotExist:
-            return Response(
-                {"message": "Service not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        try:
-            new_start_dt = parse_datetime(new_start)
-            new_end_dt = parse_datetime(new_end)
-            
-            if not new_start_dt or not new_end_dt:
-                raise ValueError("Invalid datetime format")
-            
-            # Model's reschedule method handles everything
-            child.reschedule(new_start_dt, new_end_dt, new_package,discount_amount,premium_amount)
-        except ValidationError as e:
-            return Response(
-                {"message": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except (ValueError, TypeError) as e:
-            return Response(
-                {"message": f"Invalid input: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        serializer = InvoiceBookingSerializer(child)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
-    def by_venue(self, request):
-        """Get all venue bookings with their services and invoices"""
-        venue_bookings = self.get_queryset().filter(booking_entity='VENUE')
-        serializer = InvoiceBookingSerializer(venue_bookings, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=False, methods=['get'])
-    def standalone_services(self, request):
-        """Get all standalone service bookings (those without parent)"""
-        service_bookings = self.get_queryset().filter(booking_entity='SERVICE')
-        serializer = InvoiceBookingSerializer(service_bookings, many=True)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=["patch"])
-    def change_status(self, request, pk=None):
-        booking = self.get_object()
-        service_booking_id = request.data.get("service_booking_id")
-        new_status = request.data.get("status")
-
-        if not new_status:
-            return Response(
-                {"error": "Status is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if new_status not in BookingStatus.values:
-            return Response(
-                {"error": "Invalid status"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Determine target instance (parent or child)
-        target = booking
-
-        if service_booking_id:
-            target = booking.children.filter(id=service_booking_id).first()
-            if not target:
-                return Response(
-                    {"error": "Invalid service_booking_id"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        # Validate transition
-        available_statuses = MANUAL_STATUS_TRANSITIONS.get(target.status, [])
-
-        if new_status not in available_statuses:
+           secondary_order = primary_order.secondary_orders.filter(
+                start_datetime__lte=start_dt,
+                end_datetime__gte=end_dt,
+            ).first()
+        except SecondaryOrder.DoesNotExist:
             return Response(
                 {
-                    "error": f"Cannot change status from {target.status} to {new_status}"
+                    "message": (
+                        f"No secondary order found for "
+                        f"{start_dt.year}-{start_dt.month:02d}. "
+                        "Ensure the service date falls within the booking range."
+                    )
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        with transaction.atomic():
-            # Update target
-            target.status = new_status
-            target.save(update_fields=["status"], skip_update_auto_status=True)
+        ternary_order = serializer.save(secondary_order=secondary_order)
 
-            # If parent updated → sync children in single query
-            if not service_booking_id:
-                booking.children.update(status=new_status)
+        # Recalculate subtotals up the chain
+        secondary_order.recalculate_subtotal()
+        primary_order.recalculate_total()
+
+        response_serializer = TernaryOrderSerializer(ternary_order)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+    # ── Cancel ─────────────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['post'])
+    def cancel_order(self, request, pk=None):
+        """
+        Cancel a PrimaryOrder and cascade to all SecondaryOrders and TernaryOrders.
+        """
+        primary_order = self.get_object()
+
+        if primary_order.status == BookingStatus.CANCELLED:
+            return Response(
+                {"message": "Order is already cancelled."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        primary_order.cancel()
+
+        serializer = PrimaryOrderSerializer(primary_order)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def cancel_service(self, request, pk=None):
+        """
+        Cancel a specific TernaryOrder (service line item) and recalculate totals.
+
+        Payload:
+        {
+            "ternary_order_id": 22
+        }
+        """
+        primary_order = self.get_object()
+
+        if primary_order.status == BookingStatus.CANCELLED:
+            return Response(
+                {"message": "Parent order is already cancelled."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ternary_order_id = request.data.get('ternary_order_id')
+        if not ternary_order_id:
+            return Response(
+                {"message": "'ternary_order_id' is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            ternary_order = TernaryOrder.objects.get(
+                id=ternary_order_id,
+                secondary_order__primary_order=primary_order
+            )
+        except TernaryOrder.DoesNotExist:
+            return Response(
+                {"message": "Service (TernaryOrder) not found under this order."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if ternary_order.status == BookingStatus.CANCELLED:
+            return Response(
+                {"message": "Service is already cancelled."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            ternary_order.status   = BookingStatus.CANCELLED
+            ternary_order.subtotal = Decimal('0.00')
+            ternary_order.save(update_fields=['status', 'subtotal'], skip_auto_status=True)
+
+            ternary_order.secondary_order.recalculate_subtotal()
+            primary_order.recalculate_total()
+
+        return Response({"message": "Service cancelled successfully."})
+
+    # ── Reschedule ─────────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def reschedule_order(self, request, pk=None):
+
+        primary_order = self.get_object()
+
+        new_package_id   = request.data.get("package")
+        discount_amount  = Decimal(request.data.get("discount_amount", "0"))
+        premium_amount   = Decimal(request.data.get("premium_amount", "0"))
+        raw_dates        = request.data.get("dates")
+
+        # Determine package & period type        
+        package = primary_order.package
+
+        if new_package_id:
+            from .models import Package
+            package = Package.objects.get(id=new_package_id)
+
+        period_type = package.period
+
+        try:
+            # MODE 2 — Specific Dates / Slots
+            if raw_dates:
+
+                parsed = self.parse_dates(period_type, raw_dates)
+
+                if isinstance(parsed, list):  # DAILY
+                    new_start = timezone.make_aware(
+                        datetime.combine(min(parsed), time.min)
+                    )
+                    new_end = timezone.make_aware(
+                        datetime.combine(max(parsed), time.max)
+                    )
+                else:  # HOURLY
+                    all_dates = list(parsed.keys())
+                    new_start = timezone.make_aware(
+                        datetime.combine(min(all_dates), time.min)
+                    )
+                    new_end = timezone.make_aware(
+                        datetime.combine(max(all_dates), time.max)
+                    )
+
+                primary_order.reschedule(
+                    new_start,
+                    new_end,
+                    new_package_id,
+                    discount_amount,
+                    premium_amount,
+                )
+
+                # Delete auto-generated ones
+                primary_order.secondary_orders.all().delete()
+
+                # Generate specific ones
+                primary_order.generate_secondary_from_random_dates(parsed)
+
+            # MODE 1 — Full Range
+            else:
+                new_start_raw = request.data.get("start_datetime")
+                new_end_raw   = request.data.get("end_datetime")
+
+                if not new_start_raw or not new_end_raw:
+                    raise ValidationError(
+                        {"detail": "'start_datetime' and 'end_datetime' are required."}
+                    )
+
+                new_start = parse_datetime(new_start_raw)
+                new_end   = parse_datetime(new_end_raw)
+
+                if not new_start or not new_end:
+                    raise ValidationError(
+                        {"detail": "Invalid datetime format."}
+                    )
+
+                if timezone.is_naive(new_start):
+                    new_start = timezone.make_aware(new_start)
+
+                if timezone.is_naive(new_end):
+                    new_end = timezone.make_aware(new_end)
+
+                primary_order.reschedule(
+                    new_start,
+                    new_end,
+                    new_package_id,
+                    discount_amount,
+                    premium_amount,
+                )
+
+        except ValidationError:
+            raise  # Let DRF handle structured error
+
+        except Exception as e:
+            return Response(
+                {"detail": f"Invalid input: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = PrimaryOrderSerializer(primary_order)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def reschedule_service(self, request, pk=None):
+        """
+        Reschedule a single TernaryOrder and recalculate parent totals.
+
+        Payload:
+        {
+            "ternary_order_id": 5,
+            "start_datetime": "2026-02-10T10:00:00Z",
+            "end_datetime": "2026-02-10T12:00:00Z",
+            "package": 2,               # optional
+            "discount_amount": 0.0,     # optional
+            "premium_amount": 0.0       # optional
+        }
+        """
+        primary_order = self.get_object()
+
+        ternary_order_id = request.data.get('ternary_order_id')
+        new_start        = request.data.get('start_datetime')
+        new_end          = request.data.get('end_datetime')
+        new_package      = request.data.get('package')
+        discount_amount  = request.data.get('discount_amount', Decimal('0'))
+        premium_amount   = request.data.get('premium_amount', Decimal('0'))
+
+        if not new_start or not new_end:
+            return Response(
+                {"message": "'start_datetime' and 'end_datetime' are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            ternary_order = TernaryOrder.objects.get(
+                id=ternary_order_id,
+                secondary_order__primary_order=primary_order
+            )
+        except TernaryOrder.DoesNotExist:
+            return Response(
+                {"message": "Service (TernaryOrder) not found under this order."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            new_start_dt = parse_datetime(new_start)
+            new_end_dt   = parse_datetime(new_end)
+
+            if not new_start_dt or not new_end_dt:
+                raise ValueError("Invalid datetime format.")
+
+            with transaction.atomic():
+                ternary_order.start_datetime = new_start_dt
+                ternary_order.end_datetime   = new_end_dt
+
+                if new_package:
+                    ternary_order.package_id = new_package
+                if discount_amount is not None:
+                    ternary_order.discount_amount = discount_amount
+                if premium_amount is not None:
+                    ternary_order.premium_amount  = premium_amount
+
+                ternary_order.save()
+
+                ternary_order.secondary_order.recalculate_subtotal()
+                primary_order.recalculate_total()
+
+        except ValidationError as e:
+            return Response({"message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, TypeError) as e:
+            return Response({"message": f"Invalid input: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = TernaryOrderSerializer(ternary_order)
+        return Response(serializer.data)
+
+    # ── Status change ──────────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['patch'])
+    def change_status(self, request, pk=None):
+        """
+        Manually change the status of a PrimaryOrder (and optionally a child TernaryOrder).
+
+        Payload:
+        {
+            "status": "CONFIRMED",
+            "ternary_order_id": 5   # optional — targets a specific TernaryOrder
+        }
+        """
+        primary_order    = self.get_object()
+        ternary_order_id = request.data.get('ternary_order_id')
+        new_status       = request.data.get('status')
+
+        if not new_status:
+            return Response({"error": "Status is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if new_status not in BookingStatus.values:
+            return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+        target = primary_order
+
+        if ternary_order_id:
+            try:
+                target = TernaryOrder.objects.get(
+                    id=ternary_order_id,
+                    secondary_order__primary_order=primary_order
+                )
+            except TernaryOrder.DoesNotExist:
+                return Response({"error": "Invalid ternary_order_id."}, status=status.HTTP_400_BAD_REQUEST)
+
+        available_statuses = MANUAL_STATUS_TRANSITIONS.get(target.status, [])
+        if new_status not in available_statuses:
+            return Response(
+                {"error": f"Cannot transition from '{target.status}' to '{new_status}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            target.status = new_status
+            target.save(update_fields=['status'], skip_auto_status=True)
+
+            # If PrimaryOrder status changed → sync all SecondaryOrders and TernaryOrders
+            if not ternary_order_id:
+                secondary_ids = primary_order.secondary_orders.values_list('id', flat=True)
+                SecondaryOrder.objects.filter(id__in=secondary_ids).update(status=new_status)
+                TernaryOrder.objects.filter(secondary_order_id__in=secondary_ids).update(status=new_status)
 
         return Response({
-            "message": "Status updated successfully",
-            "booking_id": target.id,
+            "message": "Status updated successfully.",
+            "order_id": target.id,
             "new_status": new_status
         })
 
+    # ── Info endpoints ─────────────────────────────────────────────────────────
+
+    @action(detail=False, methods=['get'])
+    def by_venue(self, request):
+        """List all venue PrimaryOrders with nested secondary/ternary data."""
+        queryset   = self.get_queryset().filter(booking_entity=BookingEntity.VENUE)
+        serializer = PrimaryOrderSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def by_service(self, request):
+        """List all service PrimaryOrders."""
+        queryset   = self.get_queryset().filter(booking_entity=BookingEntity.SERVICE)
+        serializer = PrimaryOrderSerializer(queryset, many=True)
+        return Response(serializer.data)
+
     @action(detail=True, methods=['get'])
-    def invoice_info(self, request, pk=None):
-        """Get comprehensive invoice information for a booking"""
-        booking = self.get_object()
-        info = booking.get_booking_invoice_info()
-        return Response(info)
+    def order_info(self, request, pk=None):
+        """Full breakdown of a PrimaryOrder including all secondary and ternary orders."""
+        primary_order = self.get_object()
+        serializer    = PrimaryOrderSerializer(primary_order)
+        return Response(serializer.data)
+
+    # ── Helpers ────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def parse_dates(period_type, raw_dates):
+        """
+        Parse and validate dates for DAILY and HOURLY packages.
+        Returns parsed data or raises ValidationError.
+        """
+        print(period_type)
+        if period_type == PeriodChoices.DAILY:
+
+            if not isinstance(raw_dates, list):
+                raise ValidationError(
+                    {"dates": "For DAILY package, 'dates' must be a list of ISO date strings."}
+                )
+
+            try:
+                return [date.fromisoformat(d) for d in raw_dates]
+            except ValueError:
+                raise ValidationError(
+                    {"dates": "Invalid date format. Use YYYY-MM-DD."}
+                )
+
+        elif period_type == PeriodChoices.HOURLY:
+
+            if not isinstance(raw_dates, dict):
+                raise ValidationError(
+                    {"dates": "For HOURLY package, 'dates' must be a dictionary."}
+                )
+
+            try:
+                return {
+                    date.fromisoformat(d): [time.fromisoformat(t) for t in slots]
+                    for d, slots in raw_dates.items()
+                }
+            except ValueError:
+                raise ValidationError(
+                    {"dates": "Invalid date or time format. Use YYYY-MM-DD and HH:MM:SS."}
+                )
+
+        return None
 
 class TotalInvoiceViewSet(viewsets.ModelViewSet):
     """
@@ -824,86 +991,6 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(grouped_data)
 
         return Response(grouped_data)
-    
-    @transaction.atomic
-    def create(self, request, *args, **kwargs):
-        """
-        Create an invoice for a booking period.
-        
-        Payload:
-        {
-            "booking_id": 123,
-            "period_start": "2026-02-01T00:00:00Z",
-            "period_end": "2026-02-28T23:59:59Z"
-        }
-        """
-        booking_id = request.data.get('booking_id')
-        period_start_str = request.data.get('period_start')
-        period_end_str = request.data.get('period_end')
-
-        if not all([booking_id, period_start_str, period_end_str]):
-            return Response(
-                {'error': 'booking_id, period_start, and period_end are required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Parse and validate datetime strings
-        try:
-            period_start = parse_datetime(period_start_str)
-            period_end = parse_datetime(period_end_str)
-            
-            if not period_start or not period_end:
-                raise ValueError("Invalid datetime format. Use ISO 8601 format.")
-            
-            if period_start >= period_end:
-                raise ValueError("period_start must be before period_end")
-        except (ValueError, TypeError) as e:
-            return Response(
-                {'error': f"Invalid date format: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            booking = InvoiceBooking.objects.select_related(
-                'patient', 'user', 'parent'
-            ).get(
-                id=booking_id,
-                user=request.user
-            )
-        except InvoiceBooking.DoesNotExist:
-            return Response(
-                {'error': 'Booking not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Validate invoice period is within booking dates
-        if period_start < booking.start_datetime or period_end > booking.end_datetime:
-            return Response(
-                {'error': 'Invoice period must be within booking dates'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Determine which booking should own the invoice
-        invoice_booking = booking.parent if booking.parent else booking
-
-        # Get or create invoice
-        invoice, created = TotalInvoice.objects.get_or_create(
-            booking=invoice_booking,
-            period_start=period_start,
-            period_end=period_end,
-            defaults={
-                "patient": invoice_booking.patient,
-                "user": invoice_booking.user,
-            }
-        )
-
-        # Always recalculate totals
-        invoice.recalculate_totals()
-
-        serializer = TotalInvoiceSerializer(invoice)
-        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-        return Response(serializer.data, status=status_code)
-
     @action(detail=True, methods=['get'])
     def recalculate(self, request, pk=None):
         """

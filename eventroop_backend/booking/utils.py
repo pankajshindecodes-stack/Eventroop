@@ -2,29 +2,7 @@ from decimal import Decimal
 from django.utils import timezone
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-
-
-def calculate_package_cost(package, start_datetime, end_datetime):
-    """
-    Calculate the cost of a package for a given period.
-    
-    This function should be implemented based on your package pricing logic.
-    Examples:
-    - Fixed monthly cost
-    - Daily rate calculation
-    - Tiered pricing based on duration
-    """
-    # Example implementation - adjust based on your Package model
-    if hasattr(package, 'monthly_cost'):
-        # Calculate number of months
-        days = (end_datetime.date() - start_datetime.date()).days
-        # Simple calculation: proportion of monthly cost
-        cost = package.monthly_cost * Decimal(days) / Decimal(30)
-        return cost
-    
-    # Fallback to base price
-    return package.price if hasattr(package, 'price') else Decimal("0.00")
-
+from .constants import BookingStatus
 
 def get_month_boundaries(date):
     """
@@ -36,99 +14,6 @@ def get_month_boundaries(date):
     month_start = date.replace(day=1)
     month_end = month_start + relativedelta(months=1) - timedelta(days=1)
     return month_start, month_end
-
-
-def generate_invoice_for_period(booking, period_start, period_end, discount=Decimal("0.00"), tax_percentage=Decimal("0.00")):
-    """
-    Generate or update an invoice for a specific period.
-    
-    Args:
-        booking: InvoiceBooking instance
-        period_start: datetime
-        period_end: datetime
-        discount: Decimal discount amount
-        tax_percentage: Decimal tax percentage
-        
-    Returns:
-        TotalInvoice instance
-    """
-    from .models import TotalInvoice
-    
-    # Calculate costs
-    subtotal = calculate_package_cost(booking.package, period_start, period_end)
-    tax_amount = (subtotal * tax_percentage) / Decimal("100")
-    total_amount = subtotal + tax_amount - discount
-    
-    # Check if invoice already exists for this period
-    invoice, created = TotalInvoice.objects.get_or_create(
-        booking=booking,
-        period_start=period_start,
-        period_end=period_end,
-        defaults={
-            'patient': booking.patient,
-            'user': booking.user,
-            'total_amount': total_amount,
-            'remaining_amount': total_amount,
-            'discount_amount': discount,
-            'tax_amount': tax_amount,
-            'due_date': timezone.now().date() + timedelta(days=30)
-        }
-    )
-    
-    if not created:
-        # Update existing invoice
-        invoice.total_amount = total_amount
-        invoice.remaining_amount = total_amount - invoice.paid_amount
-        invoice.discount_amount = discount
-        invoice.tax_amount = tax_amount
-        invoice.save()
-    
-    return invoice
-
-
-def bulk_create_invoices_for_booking(booking, number_of_months, discount=Decimal("0.00"), tax_percentage=Decimal("0.00")):
-    """
-    Create invoices for a booking spanning multiple months.
-    
-    Args:
-        booking: InvoiceBooking instance (should be parent booking)
-        number_of_months: int
-        discount: Decimal
-        tax_percentage: Decimal
-        
-    Returns:
-        list: Created TotalInvoice instances
-    """
-    from .models import TotalInvoice
-    from django.db import transaction
-    
-    invoices = []
-    start_date = booking.start_datetime.date()
-    
-    with transaction.atomic():
-        for month_offset in range(number_of_months):
-            # Calculate period for this month
-            period_start = start_date + relativedelta(months=month_offset)
-            period_start = period_start.replace(day=1)
-            
-            period_end = period_start + relativedelta(months=1) - timedelta(days=1)
-            
-            # Convert to datetime
-            period_start_dt = timezone.make_aware(datetime.combine(period_start, datetime.min.time()))
-            period_end_dt = timezone.make_aware(datetime.combine(period_end, datetime.max.time()))
-            
-            # Generate invoice
-            invoice = generate_invoice_for_period(
-                booking,
-                period_start_dt,
-                period_end_dt,
-                discount,
-                tax_percentage
-            )
-            invoices.append(invoice)
-    
-    return invoices
-
 
 def calculate_outstanding_balance(user):
     """
@@ -183,73 +68,39 @@ def send_invoice_reminder(invoice):
     # Example: send_email(invoice.user.email, "Invoice Reminder", template_context)
     pass
 
-
-def auto_generate_monthly_invoices():
-    """
-    Periodic task to auto-generate invoices for ongoing bookings.
-    Can be scheduled using Celery or other task scheduler.
-    """
-    from .models import InvoiceBooking, BookingStatus
-    from django.db.models import Q
-    
-    # Get all active parent bookings
-    active_bookings = InvoiceBooking.objects.filter(
-        parent__isnull=True,  # Parent bookings
-        status=BookingStatus.CONFIRMED
-    )
-    
-    for booking in active_bookings:
-        # Check if invoice exists for current month
-        today = timezone.now().date()
-        month_start = today.replace(day=1)
-        month_end = month_start + relativedelta(months=1) - timedelta(days=1)
-        
-        from .models import TotalInvoice
-        invoice_exists = TotalInvoice.objects.filter(
-            booking=booking,
-            period_start__date=month_start,
-            period_end__date=month_end
-        ).exists()
-        
-        if not invoice_exists:
-            # Generate invoice for current month
-            generate_invoice_for_period(
-                booking,
-                timezone.make_aware(datetime.combine(month_start, datetime.min.time())),
-                timezone.make_aware(datetime.combine(month_end, datetime.max.time()))
-            )
-
-def generate_order_id(instance, created_by=None):
-    """
-    created_by = user who triggered creation
-    If None → system / auto
-    """
+def auto_update_status(start_datetime,end_datetime):
     now = timezone.now()
+    status =  BookingStatus.DRAFT
+    if now < start_datetime:
+        status = BookingStatus.YET_TO_START
+    elif start_datetime <= now <= end_datetime:
+        status = BookingStatus.IN_PROGRESS
+    elif now > end_datetime:
+        status = BookingStatus.UNFULFILLED
+    return status
+   
 
-    # ---- Financial Year (April - March) ----
-    if now.month >= 4:
-        start_year = now.year
-        end_year = now.year + 1
-    else:
-        start_year = now.year - 1
-        end_year = now.year
+def generate_order_id(instance):
+    """
+    Generates hierarchical order_id:
+    
+    PrimaryOrder   → 00001
+    SecondaryOrder → 00001-00002
+    TernaryOrder   → 00001-00002-00003
+    """
 
-    financial_year = f"{start_year}{str(end_year)[-2:]}"
+    if not instance.id:
+        raise ValueError("Instance must be saved before generating order_id")
 
+    # TernaryOrder
+    if hasattr(instance, "secondary_order") and instance.secondary_order:
+        parent = instance.secondary_order
+        return f"{parent.order_id}-{instance.id:05}"
 
-    # ---- Prefix Logic ----
-    if created_by is None:
-        alfa = "A"   # Auto (Celery/System)
-    else:
-        if created_by.is_superuser:
-            alfa = "S"
-        elif created_by.is_owner:
-            alfa = "O"
-        elif created_by.is_manager:
-            alfa = "M"
-        elif created_by.is_customer:
-            alfa = "U"
-        elif created_by.is_vsre_staff:
-            alfa = "T"
-            
-    return f"{alfa}{financial_year}{instance.id:05}"
+    # SecondaryOrder
+    if hasattr(instance, "primary_order") and instance.primary_order:
+        parent = instance.primary_order
+        return f"{parent.order_id}-{instance.id:05}"
+
+    # PrimaryOrder
+    return f"{instance.id:05}"

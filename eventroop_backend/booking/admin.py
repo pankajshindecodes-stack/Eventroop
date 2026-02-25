@@ -1,213 +1,156 @@
 from django.contrib import admin
-from django.db.models import Sum
 from .models import (
-    Location, Package, Patient, InvoiceBooking, 
-    TotalInvoice, Payment
+    Location,
+    Package,
+    Patient,
+    PrimaryOrder,
+    SecondaryOrder,
+    TernaryOrder,
+    TotalInvoice,
+    Payment,
 )
 
-
+# Location
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    list_display = ('building_name', 'city', 'location_type', 'postal_code')
-    list_filter = ('location_type', 'city', 'state')
-    search_fields = ('building_name', 'city', 'address_line1')
-    readonly_fields = ('full_address',)
-    
-    fieldsets = (
-        ('Location Details', {
-            'fields': ('location_type', 'user')
-        }),
-        ('Address', {
-            'fields': ('building_name', 'address_line1', 'address_line2', 'locality', 'city', 'state', 'postal_code', 'full_address')
-        }),
-    )
+    list_display = ("building_name", "city", "state", "location_type", "user")
+    list_filter = ("location_type", "city", "state")
+    search_fields = ("building_name", "city", "state", "postal_code")
+    autocomplete_fields = ("user",)
 
+# Package
 @admin.register(Package)
 class PackageAdmin(admin.ModelAdmin):
-    list_display = ('name','id', 'owner', 'belongs_to', 'package_type', 'period', 'price', 'is_active')
-    list_filter = ('package_type', 'period', 'is_active', 'created_at')
-    search_fields = ('name', 'owner__email')
-    readonly_fields = ('belongs_to','created_at', 'updated_at')
-    
-    fieldsets = (
-        ('Basic Information', {
-            'fields': ('name', 'description', 'owner')
-        }),
-        ('Package Details', {
-            'fields': ('package_type', 'period', 'price', 'is_active')
-        }),
-        ('Polymorphic Relation', {
-            'fields': ('content_type', 'object_id','belongs_to'),
-            # 'classes': ('collapse',)
-        }),
-        ('Metadata', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
+    list_display = ("name", "owner", "package_type", "period", "price", "is_active", "created_at")
+    list_filter = ("package_type", "period", "is_active")
+    search_fields = ("name", "owner__email")
+    autocomplete_fields = ("owner",)
+    readonly_fields = ("created_at", "updated_at")
 
-
+# Patient
 @admin.register(Patient)
 class PatientAdmin(admin.ModelAdmin):
-    list_display = ('get_full_name', 'email', 'phone', 'gender', 'blood_group', 'registration_date')
-    list_filter = ('gender', 'blood_group', 'registration_date', 'id_proof')
-    search_fields = ('first_name', 'last_name', 'email', 'phone')
-    readonly_fields = ('registration_date', 'updated_at', 'get_total_payment')
-    date_hierarchy = 'registration_date'
-    
-    fieldsets = (
-        ('Basic Information', {
-            'fields': ('first_name', 'last_name', 'email', 'registered_by')
-        }),
-        ('Contact Information', {
-            'fields': ('phone', 'address', 'age')
-        }),
-        ('Emergency Contacts', {
-            'fields': ('emergency_contact', 'emergency_phone', 'emergency_contact_2', 'emergency_phone_2')
-        }),
-        ('Medical Information', {
-            'fields': ('gender', 'blood_group', 'medical_conditions', 'allergies', 'present_health_condition', 'preferred_language')
-        }),
-        ('Identification', {
-            'fields': ('id_proof', 'id_proof_number', 'patient_documents')
-        }),
-        ('Professional Background', {
-            'fields': ('education_qualifications', 'earlier_occupation', 'year_of_retirement'),
-            'classes': ('collapse',)
-        }),
-        ('Payment Information', {
-            'fields': ('registration_fee', 'advance_payment', 'payment_mode', 'get_total_payment')
-        }),
-        ('Metadata', {
-            'fields': ('registration_date', 'updated_at'),
-            'classes': ('collapse',)
-        }),
+    list_display = ("patient_id", "first_name", "last_name", "phone", "gender", "registration_date")
+    list_filter = ("gender", "blood_group", "registration_date")
+    search_fields = ("patient_id", "first_name", "last_name", "phone", "email")
+    autocomplete_fields = ("registered_by",)
+    readonly_fields = ("patient_id", "registration_date", "updated_at")
+    date_hierarchy = "registration_date"
+
+# Ternary Inline (inside Secondary)
+class TernaryOrderInline(admin.TabularInline):
+    model = TernaryOrder
+    extra = 0
+    readonly_fields = ("order_id", "subtotal", "created_at", "updated_at")
+    autocomplete_fields = ("service", "package")
+
+# Secondary Inline (inside Primary)
+class SecondaryOrderInline(admin.TabularInline):
+    model = SecondaryOrder
+    extra = 0
+    readonly_fields = ("order_id", "subtotal", "created_at", "updated_at")
+    show_change_link = True
+
+# PrimaryOrder
+@admin.register(PrimaryOrder)
+class PrimaryOrderAdmin(admin.ModelAdmin):
+    list_display = (
+        "order_id",
+        "booking_entity",
+        "patient",
+        "package",
+        "start_datetime",
+        "end_datetime",
+        "status",
+        "total_bill",
+        "created_at",
     )
-    
-    def get_full_name(self, obj):
-        return obj.get_full_name()
-    get_full_name.short_description = 'Full Name'
+    list_filter = ("booking_entity", "booking_type", "status", "created_at")
+    search_fields = ("order_id", "patient__first_name", "patient__last_name")
+    autocomplete_fields = ("user", "patient", "venue", "service", "package")
+    readonly_fields = ("order_id", "total_bill", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+    inlines = [SecondaryOrderInline]
 
+# SecondaryOrder
+@admin.register(SecondaryOrder)
+class SecondaryOrderAdmin(admin.ModelAdmin):
+    list_display = (
+        "order_id",
+        "primary_order",
+        "status",
+        "subtotal",
+    )
+    list_filter = ("status",)
+    search_fields = ("order_id", "primary_order__order_id")
+    readonly_fields = ("order_id", "subtotal", "created_at", "updated_at")
+    autocomplete_fields = ("primary_order",)
+    inlines = [TernaryOrderInline]
 
+# TernaryOrder
+@admin.register(TernaryOrder)
+class TernaryOrderAdmin(admin.ModelAdmin):
+    list_display = (
+        "order_id",
+        "secondary_order",
+        "service",
+        "package",
+        "status",
+        "subtotal",
+    )
+    list_filter = ("booking_entity", "booking_type", "status")
+    search_fields = ("order_id", "secondary_order__order_id")
+    readonly_fields = ("order_id", "subtotal", "created_at", "updated_at")
+    autocomplete_fields = ("secondary_order", "service", "package")
 
-# Payments Inline (inside Invoice)
+# Payment Inline (inside Invoice)
 class PaymentInline(admin.TabularInline):
     model = Payment
     extra = 0
     readonly_fields = ("created_at",)
 
-
-# Monthly Invoice Admin
-
+# TotalInvoice
 @admin.register(TotalInvoice)
 class TotalInvoiceAdmin(admin.ModelAdmin):
-
     list_display = (
         "invoice_number",
-        "booking",
-        "period_start",
-        "period_end",
+        "secondary_order",
+        "patient",
         "total_amount",
         "paid_amount",
         "remaining_amount",
         "status",
+        "issued_date",
     )
-
-    list_filter = ("status", "period_start")
-
-    search_fields = ("invoice_number",)
-
-    readonly_fields = ("paid_amount", "remaining_amount")
-
+    list_filter = ("status", "issued_date")
+    search_fields = ("invoice_number", "patient__first_name", "patient__last_name")
+    autocomplete_fields = ("secondary_order", "patient", "user")
+    readonly_fields = (
+        "invoice_number",
+        "subtotal",
+        "total_amount",
+        "remaining_amount",
+        "issued_date",
+        "created_at",
+        "updated_at",
+    )
+    date_hierarchy = "issued_date"
     inlines = [PaymentInline]
 
-    def save_model(self, request, obj, form, change):
-        """
-        Auto recalc paid + remaining whenever admin saves.
-        """
-        super().save_model(request, obj, form, change)
-
-        payments = obj.payments.aggregate(total=Sum("amount"))["total"] or 0
-
-        obj.paid_amount = payments
-        obj.remaining_amount = obj.total_amount - payments
-
-        if obj.remaining_amount <= 0:
-            obj.status = "PAID"
-
-        obj.save(update_fields=["paid_amount", "remaining_amount", "status"])
-
-
-
-# Booking Inline (services under venue)
-
-
-class ServiceBookingInline(admin.TabularInline):
-    model = InvoiceBooking
-    fk_name = "parent"
-    extra = 0
-    show_change_link = True
-
-
-
-# InvoiceBooking Admin
-
-
-@admin.register(InvoiceBooking)
-class InvoiceBookingAdmin(admin.ModelAdmin):
-
+# Payment
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
     list_display = (
         "id",
-        "booking_entity",
-        "user",
-        "venue",
-        "service",
-        "start_datetime",
-        "end_datetime",
-        "subtotal",
-        "status",
+        "invoice",
+        "patient",
+        "amount",
+        "method",
+        "is_verified",
+        "paid_date",
     )
-
-    list_filter = ("booking_entity", "status")
-
-    search_fields = ("id",)
-
-    inlines = [ServiceBookingInline]
-
-    readonly_fields = ("subtotal",)
-
-    fieldsets = (
-        ("Core", {
-            "fields": (
-                "booking_entity",
-                "parent",
-                "user",
-                "patient",
-                "status",
-            )
-        }),
-        ("Entities", {
-            "fields": (
-                "venue",
-                "service",
-                "package",
-            )
-        }),
-        ("Period", {
-            "fields": (
-                "start_datetime",
-                "end_datetime",
-            )
-        }),
-        ("Financial", {
-            "fields": ("subtotal",),
-        }),
-    )
-
-    def get_queryset(self, request):
-        """
-        Only show parent bookings by default.
-        """
-        qs = super().get_queryset(request)
-        return qs.filter(parent__isnull=True)
+    list_filter = ("method", "is_verified", "paid_date")
+    search_fields = ("reference", "invoice__invoice_number")
+    autocomplete_fields = ("invoice", "patient")
+    readonly_fields = ("reference", "created_at")
+    date_hierarchy = "paid_date"

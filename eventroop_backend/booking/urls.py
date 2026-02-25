@@ -13,7 +13,7 @@ router.register(r'patients', PatientViewSet, basename='patients')
 router.register(r'location', LocationViewSet, basename='location')
 router.register(r'packages', PackageViewSet, basename='package')
 
-router.register(r"bookings", InvoiceBookingViewSet, basename="bookings")
+router.register(r"bookings", OrderViewSet, basename="bookings")
 router.register(r"invoices", TotalInvoiceViewSet, basename="invoices")
 router.register(r"payments", PaymentViewSet, basename="payments")
 
