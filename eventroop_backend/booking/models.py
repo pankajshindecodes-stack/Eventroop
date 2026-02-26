@@ -630,7 +630,7 @@ class SecondaryOrder(models.Model):
         ordering = ["start_datetime","end_datetime"]
 
     def __str__(self):
-        return f"SecondaryOrder [{self.year}-{self.month:02d}] → {self.primary_order.order_id}"
+        return f"SecondaryOrder [{self.start_datetime}-{self.end_datetime}] → {self.primary_order.order_id}"
     
     def save(self, *args, **kwargs):
         skip_auto_status = kwargs.pop("skip_auto_status", False)

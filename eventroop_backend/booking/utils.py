@@ -81,26 +81,19 @@ def auto_update_status(start_datetime,end_datetime):
    
 
 def generate_order_id(instance):
-    """
-    Generates hierarchical order_id:
-    
-    PrimaryOrder   → 00001
-    SecondaryOrder → 00001-00002
-    TernaryOrder   → 00001-00002-00003
-    """
-
     if not instance.id:
         raise ValueError("Instance must be saved before generating order_id")
 
     # TernaryOrder
     if hasattr(instance, "secondary_order") and instance.secondary_order:
-        parent = instance.secondary_order
-        return f"{parent.order_id}-{instance.id:05}"
+        secondary = instance.secondary_order
+        primary = instance.secondary_order.primary_order
+        return f"#{primary.id:03}{secondary.id:03}{instance.id:03}"
 
     # SecondaryOrder
     if hasattr(instance, "primary_order") and instance.primary_order:
-        parent = instance.primary_order
-        return f"{parent.order_id}-{instance.id:05}"
+        primary = instance.primary_order
+        return f"#{primary.id:03}{instance.id:03}000"
 
     # PrimaryOrder
-    return f"{instance.id:05}"
+    return f"#{instance.id:03}000000"
