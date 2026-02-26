@@ -394,8 +394,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         serializer.validated_data['user'] = request.user
-        serializer.validated_data['start_datetime'] = timezone.make_aware(datetime.combine(min(parsed_dates), time.min))
-        serializer.validated_data['end_datetime'] = timezone.make_aware(datetime.combine(max(parsed_dates), time.max))
         
         if raw_dates:
             date_keys = list(raw_dates.keys()) if isinstance(raw_dates, dict) else raw_dates
