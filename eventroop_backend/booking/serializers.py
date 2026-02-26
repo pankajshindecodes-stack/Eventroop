@@ -133,42 +133,6 @@ class PackageSerializer(serializers.ModelSerializer):
             "belongs_to_type",
         ]
 
-
-class PaymentSerializer(serializers.ModelSerializer):
-    """Serializer for Payment model"""
-
-    class Meta:
-        model = Payment
-        fields = [
-            'id',
-            'amount',
-            'method',
-            'paid_date',
-            'reference',
-            'is_verified',
-        ]
-        read_only_fields = ['id', 'reference']
-
-class PaymentCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating payments"""
-
-    class Meta:
-        model = Payment
-        fields = [
-            'amount',
-            'method',
-            'reference',
-            'paid_date',
-            'is_verified',
-        ]
-
-    def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError(
-                "Payment amount must be greater than zero."
-            )
-        return value
-
 class TernaryOrderCreateSerializer(serializers.ModelSerializer):
     """
     Create a TernaryOrder (service) under a SecondaryOrder.
@@ -448,6 +412,42 @@ class PrimaryOrderCreateSerializer(serializers.ModelSerializer):
         
         return PrimaryOrder.objects.create(**validated_data)
 
+
+class PaymentSerializer(serializers.ModelSerializer):
+    """Serializer for Payment model"""
+
+    class Meta:
+        model = Payment
+        fields = [
+            'id',
+            'amount',
+            'method',
+            'paid_date',
+            'reference',
+            'is_verified',
+        ]
+        read_only_fields = ['id', 'reference']
+
+class PaymentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating payments"""
+
+    class Meta:
+        model = Payment
+        fields = [
+            'amount',
+            'method',
+            'reference',
+            'paid_date',
+            'is_verified',
+        ]
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Payment amount must be greater than zero."
+            )
+        return value
+
 class TotalInvoiceSerializer(serializers.ModelSerializer):
     """
     Unified serializer for TotalInvoice list and detail views.
@@ -478,7 +478,7 @@ class TotalInvoiceSerializer(serializers.ModelSerializer):
             'invoice_number',
             'status',
             # relations
-            'booking',          # PrimaryOrder FK
+            'secondary_order',          # PrimaryOrder FK
             'patient',
             'patient_name',
             'user',
@@ -527,3 +527,5 @@ class InvoiceSummarySerializer(serializers.Serializer):
     unpaid_count          = serializers.IntegerField()
     partially_paid_count  = serializers.IntegerField()
     paid_count            = serializers.IntegerField()
+
+    

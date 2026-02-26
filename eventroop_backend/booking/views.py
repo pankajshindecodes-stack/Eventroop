@@ -8,6 +8,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils.dateparse import parse_datetime
 from datetime import datetime, time, date
+from itertools import groupby
+from django.db.models import Sum,Count,Q
 
 class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -753,7 +755,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         Parse and validate dates for DAILY and HOURLY packages.
         Returns parsed data or raises ValidationError.
         """
-        print(period_type)
         if period_type == PeriodChoices.DAILY:
 
             if not isinstance(raw_dates, list):
@@ -784,8 +785,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 raise ValidationError(
                     {"dates": "Invalid date or time format. Use YYYY-MM-DD and HH:MM:SS."}
                 )
-
-        return None
+        else:
+            return None
 
 class TotalInvoiceViewSet(viewsets.ModelViewSet):
     """
@@ -798,13 +799,13 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
     """
     # pagination_class = None
     queryset = TotalInvoice.objects.select_related(
-        'booking', 'patient', 'user'
+        'secondary_order', 'patient', 'user'
     ).prefetch_related('payments')
     serializer_class = TotalInvoiceSerializer
     search_fields = ['invoice_number', 'patient__first_name', 'patient__last_name', 'status']
     filterset_fields = {
         'patient': ['exact'],
-        'booking__booking_type': ['exact'],
+        'secondary_order__primary_order__booking_type': ['exact'],
         'status': ['exact'],
     }
 

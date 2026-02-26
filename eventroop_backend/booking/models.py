@@ -9,7 +9,7 @@ from django.contrib.contenttypes import fields, models as ct_models
 from decimal import Decimal
 import uuid
 from .constants import *
-from .utils import auto_update_status,generate_order_id
+from .utils import auto_update_status,generate_order_id,calculate_amount
 from datetime import timedelta,datetime, time
 from dateutil.relativedelta import relativedelta
         
@@ -270,6 +270,7 @@ class Patient(models.Model):
             self.patient_id = f"{self.pk:05}"
             super().save(update_fields=["patient_id"])
 
+# PrimaryOrder
 class PrimaryOrder(models.Model):
     order_id = models.CharField(max_length=50, blank=True)
 
@@ -277,71 +278,50 @@ class PrimaryOrder(models.Model):
         max_length=20,
         choices=BookingEntity.choices,
         default=BookingEntity.VENUE,
-        db_index=True
+        db_index=True,
     )
-
     user = models.ForeignKey(
-        "accounts.CustomUser",
-        on_delete=models.CASCADE,
-        db_index=True
+        "accounts.CustomUser", on_delete=models.CASCADE, db_index=True
     )
-
-    patient = models.ForeignKey(
-        Patient,
-        on_delete=models.CASCADE,
-        db_index=True
-    )
-
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, db_index=True)
     venue = models.ForeignKey(
         "venue_manager.Venue",
-        null=True,
-        blank=True,
+        null=True, blank=True,
         on_delete=models.SET_NULL,
-        db_index=True
+        db_index=True,
     )
-
     service = models.ForeignKey(
         "venue_manager.Service",
-        null=True,
-        blank=True,
+        null=True, blank=True,
         on_delete=models.SET_NULL,
-        db_index=True
+        db_index=True,
     )
-
     package = models.ForeignKey(
-        Package,
-        on_delete=models.CASCADE,
-        related_name="primary_orders"
+        Package, on_delete=models.CASCADE, related_name="primary_orders"
     )
 
     start_datetime = models.DateTimeField(db_index=True)
-    end_datetime   = models.DateTimeField(db_index=True)
+    end_datetime = models.DateTimeField(db_index=True)
 
     total_bill = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal("0.00"),
-        editable=False
+        max_digits=10, decimal_places=2, default=Decimal("0.00"), editable=False
     )
-
     booking_type = models.CharField(
         max_length=25,
         choices=BookingType.choices,
         default=BookingType.OPD,
-        db_index=True
+        db_index=True,
     )
-
     status = models.CharField(
         max_length=25,
         choices=BookingStatus.choices,
         default=BookingStatus.DRAFT,
-        db_index=True
+        db_index=True,
     )
-
     auto_continue = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -353,89 +333,112 @@ class PrimaryOrder(models.Model):
             entity = str(self.venue) if self.venue else "Unknown Venue"
         else:
             entity = "Unknown"
-
         patient_name = self.patient.get_full_name() if self.patient else "Unknown Patient"
-
         return f"#{self.pk} | {self.get_booking_entity_display()} | {patient_name} | {entity}"
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     def save(self, *args, **kwargs):
+        # Extract custom flags before passing kwargs to super()
         skip_auto_status = kwargs.pop("skip_auto_status", False)
-        if not skip_auto_status:
-            self.status = auto_update_status(self.start_datetime,self.end_datetime)
+
+        # save — otherwise we overwrite unrelated fields unintentionally.
+        update_fields = kwargs.get("update_fields")
+        is_targeted_save = update_fields is not None
+
+        if not is_targeted_save:
+            if not skip_auto_status:
+                self.status = auto_update_status(self.start_datetime, self.end_datetime)
+
+            self.booking_type = self.package.package_type
 
         super().save(*args, **kwargs)
-        self.booking_type = self.package.package_type
-        super().save(update_fields=["booking_type"])
 
-        # Only generate order_id if missing
         if not self.order_id:
             self.order_id = generate_order_id(self)
+            # Use super() to avoid re-triggering this save() hook
             super().save(update_fields=["order_id"])
-
+        self.recalculate_total()
+        
     # ── Sub-order generation ───────────────────────────────────────────────────
     def generate_secondary_from_random_dates(self, dates):
-        """Create SecondaryOrders from a list of dates (DAILY) or dict of date->slots (HOURLY)."""
+        """
+        Create SecondaryOrders from:
+        - list[date] → DAILY
+        - dict[date] = [time, time] → HOURLY
+        """
         if not dates:
             return
-        
 
         period_type = self.package.period
-        pkg_price = self.package.price
 
-        
         with transaction.atomic():
-                objects = []
+            objects = []
 
-                if period_type == PeriodChoices.DAILY and isinstance(dates, list):
+            # DAILY
+            if period_type == PeriodChoices.DAILY and isinstance(dates, list):
+                for d in dates:
+                    start_dt = timezone.make_aware(datetime.combine(d, time.min))
+                    end_dt = timezone.make_aware(datetime.combine(d, time.max))
 
-                    objects = [
+                    objects.append(
                         SecondaryOrder(
                             primary_order=self,
-                            start_datetime=timezone.make_aware(datetime.combine(d, time.min)),
-                            end_datetime=timezone.make_aware(datetime.combine(d, time.max)),
-                            subtotal=pkg_price,
+                            start_datetime=start_dt,
+                            end_datetime=end_dt,
+                            subtotal=calculate_amount(start_dt, end_dt, self.package),
                         )
-                        for d in dates
-                    ]
+                    )
 
-                elif period_type == PeriodChoices.HOURLY and isinstance(dates, dict):
+            # HOURLY
+            elif period_type == PeriodChoices.HOURLY and isinstance(dates, dict):
+                for date, slots in dates.items():
+                    if not slots:
+                        continue
 
-                    objects = [
+                    start_dt = timezone.make_aware(datetime.combine(date, min(slots)))
+                    end_dt = timezone.make_aware(datetime.combine(date, max(slots)))
+
+                    objects.append(
                         SecondaryOrder(
                             primary_order=self,
-                            start_datetime=timezone.make_aware(datetime.combine(date, min(slots))),
-                            end_datetime=timezone.make_aware(datetime.combine(date, max(slots))),
-                            subtotal=pkg_price,
+                            start_datetime=start_dt,
+                            end_datetime=end_dt,
+                            subtotal=calculate_amount(start_dt, end_dt, self.package),
                         )
-                        for date, slots in dates.items()
-                    ]
+                    )
 
-                # Insert / Update
-                SecondaryOrder.objects.bulk_create(
-                    objects,
-                    update_conflicts=True,
-                    unique_fields=["primary_order", "start_datetime", "end_datetime"],
-                    update_fields=["subtotal"],
+            # Nothing to create
+            if not objects:
+                return
+
+            # Bulk create/update
+            SecondaryOrder.objects.bulk_create(
+                objects,
+                update_conflicts=True,
+                unique_fields=["primary_order", "start_datetime", "end_datetime"],
+                update_fields=["subtotal"],
+            )
+
+            # Only fetch affected records (not all)
+            updated_secondaries = list(
+                SecondaryOrder.objects.filter(
+                    primary_order=self,
+                    start_datetime__in=[obj.start_datetime for obj in objects],
                 )
+            )
 
-                # Fetch all secondaries of this primary (safe with update_conflicts)
-                secondaries = SecondaryOrder.objects.filter(primary_order=self)
+            for obj in updated_secondaries:
+                if not obj.order_id:
+                    obj.status = auto_update_status(obj.start_datetime, obj.end_datetime)
+                    obj.order_id = generate_order_id(obj)
 
-                # Apply business logic manually
-                for obj in secondaries:
-                    if not obj.order_id:
-                        obj.status = auto_update_status(obj.start_datetime,obj.end_datetime)
-                        obj.order_id = generate_order_id(obj)
+            SecondaryOrder.objects.bulk_update(
+                updated_secondaries,
+                ["status", "order_id"],
+            )
 
-                # Bulk update only changed fields
-                SecondaryOrder.objects.bulk_update(
-                    secondaries,
-                    ["status", "order_id"]
-                )
-
-                # Recalculate once
-                self.recalculate_total()
+            # Recalculate total once
+            self.recalculate_total()
 
     def generate_secondary_full_range_dates(self):
         """Create SecondaryOrders by splitting the full booking range into periods."""
@@ -475,42 +478,43 @@ class PrimaryOrder(models.Model):
                 update_fields=["subtotal"],
             )
 
-            # IMPORTANT: IDs are now available
             for obj in created:
-                obj.status = auto_update_status(obj.start_datetime,obj.end_datetime)
+                obj.status = auto_update_status(obj.start_datetime, obj.end_datetime)
                 obj.order_id = generate_order_id(obj)
 
-            SecondaryOrder.objects.bulk_update(
-                created,
-                ["status", "order_id"],
-            )
+            SecondaryOrder.objects.bulk_update(created, ["status", "order_id"])
 
-            # Recalculate once (not inside every save)
             self.recalculate_total()
 
+    # ── Period helpers ─────────────────────────────────────────────────────────
     def _get_monthly_periods(self):
-        """Split range into calendar-month periods. Example: Feb 15→Apr 25 = (Feb 15, Feb 28), (Mar 1, Mar 31), (Apr 1, Apr 25)"""
+        """
+        Split range into calendar-month periods.
+        Example: Feb 15 → Apr 25  =  (Feb 15, Feb 28), (Mar 1, Mar 31), (Apr 1, Apr 25)
+        """
         periods = []
         current = self.start_datetime
 
         while current < self.end_datetime:
-            month_end = (current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                        + relativedelta(months=1) - timedelta(microseconds=1))
-            periods.append((current, min(month_end, self.end_datetime)))
-            current = min(month_end, self.end_datetime) + timedelta(microseconds=1)
+            month_end = (
+                current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                + relativedelta(months=1)
+                - timedelta(microseconds=1)
+            )
+            period_end = min(month_end, self.end_datetime)
+            periods.append((current, period_end))
+            current = period_end + timedelta(microseconds=1)
 
         return periods
 
     def _get_weekly_periods(self):
-        """Split into daily periods grouped by week boundaries."""
         return self._split_into_days(chunk_days=7)
 
     def _get_daily_periods(self):
-        """Split full date range into daily periods."""
         return self._split_into_days()
 
     def _split_into_days(self, chunk_days=None):
-        """Shared logic for splitting a range into day-level periods, optionally in chunks."""
+        """Shared logic: split range into day-level periods, optionally in N-day chunks."""
         if self.start_datetime >= self.end_datetime:
             return []
 
@@ -518,8 +522,11 @@ class PrimaryOrder(models.Model):
         current = self.start_datetime
 
         while current < self.end_datetime:
-            chunk_end = (min(current + timedelta(days=chunk_days), self.end_datetime)
-                        if chunk_days else self.end_datetime)
+            chunk_end = (
+                min(current + timedelta(days=chunk_days), self.end_datetime)
+                if chunk_days
+                else self.end_datetime
+            )
 
             day_cursor = current
             while day_cursor < chunk_end:
@@ -532,35 +539,14 @@ class PrimaryOrder(models.Model):
 
             current = chunk_end
 
-        return periods    
-    
+        return periods
+
     # ── Actions ────────────────────────────────────────────────────────────────
-    def cancel(self):
-        if self.status == BookingStatus.CANCELLED:
-            return
-
-        with transaction.atomic():
-            self.status   = BookingStatus.CANCELLED
-            self.subtotal = Decimal("0.00")
-            self.save(update_fields=["status", "subtotal"])
-
-            # Cascade to secondary and ternary orders
-            secondary_ids = self.secondary_orders.values_list("id", flat=True)
-            TernaryOrder.objects.filter(secondary_order_id__in=secondary_ids).update(
-                status=BookingStatus.CANCELLED,
-                subtotal=Decimal("0.00")
-            )
-            self.secondary_orders.update(
-                status=BookingStatus.CANCELLED,
-                subtotal=Decimal("0.00")
-            )
-
     def reschedule(self, new_start, new_end, new_package_id=None, discount_amount=None, premium_amount=None):
         now = timezone.now()
 
         if new_start >= new_end:
             raise ValidationError("Start date must be before end date.")
-
         if self.end_datetime < now:
             raise ValidationError("Past bookings cannot be rescheduled.")
 
@@ -570,7 +556,7 @@ class PrimaryOrder(models.Model):
 
         with transaction.atomic():
             self.start_datetime = new_start
-            self.end_datetime   = new_end
+            self.end_datetime = new_end
 
             if new_package_id:
                 self.package_id = new_package_id
@@ -580,202 +566,247 @@ class PrimaryOrder(models.Model):
                 self.premium_amount = premium_amount
 
             self.save(skip_auto_status=True)
-
-            # Regenerate sub-orders to reflect new dates
             self._generate_secondary_and_ternary_orders()
-    
+
     def recalculate_total(self):
         total = self.secondary_orders.aggregate(
             total=Coalesce(Sum("subtotal"), Decimal("0.00"))
         )["total"]
 
         self.total_bill = total
-        self.save(update_fields=["total_bill"])
-
+        super().save(update_fields=["total_bill"])
+ 
+# SecondaryOrder
 class SecondaryOrder(models.Model):
-    """One record per month within a PrimaryOrder span."""
+    """One record per period (month/week/day) within a PrimaryOrder span."""
 
     primary_order = models.ForeignKey(
         PrimaryOrder,
         on_delete=models.CASCADE,
         related_name="secondary_orders",
-        null=True,
-        blank=True,
-        db_index=True
+        null=True, blank=True,
+        db_index=True,
     )
-
     order_id = models.CharField(max_length=50, blank=True)
 
-    start_datetime = models.DateTimeField(db_index=True)      # month start (clamped to primary range)
-    end_datetime   = models.DateTimeField(db_index=True)      # month end   (clamped to primary range)
+    start_datetime = models.DateTimeField(db_index=True)
+    end_datetime = models.DateTimeField(db_index=True)
 
     subtotal = models.DecimalField(
-        max_digits=10, decimal_places=2,
-        default=Decimal("0.00"), editable=False
+        max_digits=10, decimal_places=2, default=Decimal("0.00"), editable=False
     )
-
     status = models.CharField(
         max_length=25,
         choices=BookingStatus.choices,
         default=BookingStatus.DRAFT,
-        db_index=True
+        db_index=True,
     )
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        # A primary order can only have one secondary order per month/year
-        unique_together = ("primary_order", "start_datetime","end_datetime")
-        ordering = ["start_datetime","end_datetime"]
+        unique_together = ("primary_order", "start_datetime", "end_datetime")
+        ordering = ["start_datetime", "end_datetime"]
 
     def __str__(self):
-        return f"SecondaryOrder [{self.start_datetime}-{self.end_datetime}] → {self.primary_order.order_id}"
-    
+        return (
+            f"SecondaryOrder [{self.start_datetime}–{self.end_datetime}]"
+            f" → {self.primary_order.order_id}"
+        )
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────────
+
     def save(self, *args, **kwargs):
         skip_auto_status = kwargs.pop("skip_auto_status", False)
+        skip_primary_recalc = kwargs.pop("skip_primary_recalc", False)
 
-        if not skip_auto_status:
-            self.status = auto_update_status(self.start_datetime,self.end_datetime)
+        update_fields = kwargs.get("update_fields")
+        is_targeted_save = update_fields is not None
+
+        if not is_targeted_save and not skip_auto_status:
+            self.status = auto_update_status(self.start_datetime, self.end_datetime)
 
         super().save(*args, **kwargs)
 
-        # Only generate order_id if missing
         if not self.order_id:
-            self.order_id =generate_order_id(self)
+            self.order_id = generate_order_id(self)
             super().save(update_fields=["order_id"])
 
-        # Recalculate parent only when called normally
-        if not kwargs.get("skip_primary_recalc", False):
+        if not skip_primary_recalc and not is_targeted_save and self.primary_order_id:
             self.primary_order.recalculate_total()
 
+        if not is_targeted_save:
+            self._sync_invoice()
+
+        # Generate or update invoice when status enters a trigger state.
+        INVOICE_TRIGGER_STATUSES = {
+            BookingStatus.UNFULFILLED,
+            BookingStatus.PARTIALLY_FULFILLED,
+            BookingStatus.FULFILLED,
+        }
+        if self.status in INVOICE_TRIGGER_STATUSES:
+            self.generate_or_update_invoice()
+
+    # ── Invoice generation ─────────────────────────────────────────────────────
+
+    def generate_or_update_invoice(self):
+        """
+        Create a TotalInvoice for this SecondaryOrder if one doesn't exist,
+        or update the existing one if it does.
+
+        Called automatically from save() when status changes to a trigger status.
+        Can also be called manually if needed.
+        """
+        TotalInvoice.create_or_update_for_secondary(self)
+
+    # ── Calculations ───────────────────────────────────────────────────────────
 
     def recalculate_subtotal(self):
-        total = self.ternary_orders.aggregate(
+        """
+        Recompute subtotal as: base_price + Sum(TernaryOrder.subtotal)
+        Then cascade up to PrimaryOrder and sideways to TotalInvoice.
+        """
+        base_price = self.primary_order.package.price
+        ternary_total = self.ternary_orders.aggregate(
             total=Coalesce(Sum("subtotal"), Decimal("0.00"))
         )["total"]
 
-        self.subtotal = total
-        self.save(update_fields=["subtotal"])
+        self.subtotal = base_price + ternary_total
+        super().save(update_fields=["subtotal"])
 
+        if self.primary_order_id:
+            self.primary_order.recalculate_total()
+        self._sync_invoice()
+
+    def _sync_invoice(self):
+        """
+        Push the current subtotal into the linked TotalInvoice if one exists.
+        Skips silently if no invoice has been generated yet.
+        """
+        invoice = self.invoices.first()
+        if invoice:
+            invoice.sync_from_secondary()
+
+# TernaryOrder
 class TernaryOrder(models.Model):
-    """One record per service/booking line item within a SecondaryOrder (monthly slot)."""
+    """One record per service/booking line item within a SecondaryOrder."""
 
     secondary_order = models.ForeignKey(
         SecondaryOrder,
         on_delete=models.CASCADE,
         related_name="ternary_orders",
-        db_index=True
+        db_index=True,
     )
-
     order_id = models.CharField(max_length=50, blank=True)
 
     service = models.ForeignKey(
         "venue_manager.Service",
         null=True, blank=True,
         on_delete=models.SET_NULL,
-        db_index=True
+        db_index=True,
     )
-
     package = models.ForeignKey(
-        "Package",
-        on_delete=models.CASCADE,
-        related_name="ternary_orders"
+        "Package", on_delete=models.CASCADE, related_name="ternary_orders"
     )
 
     booking_entity = models.CharField(
         max_length=20,
         choices=BookingEntity.choices,
         default=BookingEntity.SERVICE,
-        db_index=True
+        db_index=True,
     )
-
     booking_type = models.CharField(
         max_length=25,
         choices=BookingType.choices,
         default=BookingType.OPD,
-        db_index=True
+        db_index=True,
     )
 
     start_datetime = models.DateTimeField(db_index=True)
-    end_datetime   = models.DateTimeField(db_index=True)
+    end_datetime = models.DateTimeField(db_index=True)
 
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
-    premium_amount  = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    premium_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
     subtotal = models.DecimalField(
-        max_digits=10, decimal_places=2,
-        default=Decimal("0.00"), editable=False
+        max_digits=10, decimal_places=2, default=Decimal("0.00"), editable=False
     )
-
     status = models.CharField(
         max_length=25,
         choices=BookingStatus.choices,
         default=BookingStatus.DRAFT,
-        db_index=True
+        db_index=True,
     )
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["start_datetime"]
 
     def __str__(self):
         return f"TernaryOrder [{self.order_id}] → {self.secondary_order}"
-    
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────────
     def save(self, *args, **kwargs):
         skip_auto_status = kwargs.pop("skip_auto_status", False)
+        skip_subtotal_recalc = kwargs.pop("skip_subtotal_recalc", False)
 
-        if not skip_auto_status:
-            self.status = auto_update_status(self.start_datetime,self.end_datetime)
+        update_fields = kwargs.get("update_fields")
+        is_targeted_save = update_fields is not None
+        
+        if not is_targeted_save:
+            if not skip_auto_status:
+                self.status = auto_update_status(self.start_datetime, self.end_datetime)
+            self.booking_type = self.package.package_type
+        base_amount = calculate_amount(self.start_datetime,self.end_datetime,self.package)
 
+        discount = self.discount_amount or Decimal("0.00")
+        premium = self.premium_amount or Decimal("0.00")
+
+        self.subtotal = base_amount - discount + premium
         super().save(*args, **kwargs)
-        self.booking_type = self.package.package_type
-        super().save(update_fields=["booking_type"])
 
-        # Only generate order_id if missing
         if not self.order_id:
             self.order_id = generate_order_id(self)
             super().save(update_fields=["order_id"])
-
-        # Recalculate parent only when called normally
-        if not kwargs.get("skip_subtotal_recalc", False):
-            self.secondary_order.recalculate_subtotal()
         
+        if not skip_subtotal_recalc and not is_targeted_save:
+            self.secondary_order.recalculate_subtotal()
+   
+# TotalInvoice
 class TotalInvoice(models.Model):
     """One invoice per SecondaryOrder (monthly billing slot)."""
 
     secondary_order = models.ForeignKey(
-        SecondaryOrder,
-        related_name="invoices",
-        on_delete=models.CASCADE
+        SecondaryOrder, related_name="invoices", on_delete=models.CASCADE
     )
-
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
-    user    = models.ForeignKey("accounts.CustomUser", on_delete=models.CASCADE)
+    user = models.ForeignKey("accounts.CustomUser", on_delete=models.CASCADE)
 
     invoice_number = models.CharField(max_length=50, unique=True, blank=True)
 
     period_start = models.DateTimeField(db_index=True)
-    period_end   = models.DateTimeField(db_index=True)
+    period_end = models.DateTimeField(db_index=True)
 
-    subtotal         = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    tax_amount       = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    total_amount     = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    paid_amount      = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     remaining_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
 
-    status   = models.CharField(max_length=20, choices=InvoiceStatus.choices, default=InvoiceStatus.UNPAID)
+    status = models.CharField(
+        max_length=20, choices=InvoiceStatus.choices, default=InvoiceStatus.UNPAID
+    )
     due_date = models.DateField(null=True, blank=True)
 
     issued_date = models.DateField(auto_now_add=True)
-    created_at  = models.DateTimeField(auto_now_add=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-issued_date"]
-        # One invoice per monthly slot
         unique_together = ("secondary_order", "period_start", "period_end")
         indexes = [
             models.Index(fields=["secondary_order", "period_start"]),
@@ -790,46 +821,96 @@ class TotalInvoice(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         super().save(*args, **kwargs)
-
         if is_new and not self.invoice_number:
             self.invoice_number = f"INV{self.id:08}"
             super().save(update_fields=["invoice_number"])
 
-    # ── Calculations ───────────────────────────────────────────────────────────
-
-    def recalculate_totals(self):
+    # ── Creation ───────────────────────────────────────────────────────────────
+    @classmethod
+    def create_or_update_for_secondary(cls, secondary: SecondaryOrder) -> "TotalInvoice":
         """
-        Sum up all TernaryOrder subtotals within this monthly period
-        and recompute the invoice total.
+        Create a TotalInvoice for the given SecondaryOrder, or update the
+        existing one if it already exists.
+
+        Called automatically from SecondaryOrder.generate_or_update_invoice()
+        when status transitions to UNFULFILLED, PARTIALLY_FULFILLED, or FULFILLED.
+
+        Create path:
+          - Pulls patient and user from secondary_order → primary_order
+          - Sets period_start/end from the secondary order's datetime range
+          - Computes subtotal from secondary.subtotal (already correct)
+          - total_amount = subtotal + tax_amount (default 0)
+          - remaining_amount = total_amount (no payments yet)
+
+        Update path:
+          - Re-syncs subtotal, total_amount, remaining_amount from the
+            secondary order's current subtotal
+          - Does NOT touch paid_amount, status, or tax_amount — those are
+            managed by recalculate_payments() and manual tax edits respectively
         """
-        ternary_subtotal = self._calculate_ternary_subtotal()
+        primary = secondary.primary_order
 
-        self.subtotal         = ternary_subtotal
-        self.total_amount     = ternary_subtotal + (self.tax_amount or Decimal("0.00"))
-        self.remaining_amount = self.total_amount - (self.paid_amount or Decimal("0.00"))
+        subtotal = secondary.subtotal
+        tax_amount = Decimal("0.00")
+        total_amount = subtotal + tax_amount
+        remaining_amount = total_amount
 
+        with transaction.atomic():
+            invoice, created = cls.objects.get_or_create(
+                secondary_order=secondary,
+                period_start=secondary.start_datetime,
+                period_end=secondary.end_datetime,
+                defaults={
+                    "patient": primary.patient,
+                    "user": primary.user,
+                    "subtotal": subtotal,
+                    "tax_amount": tax_amount,
+                    "total_amount": total_amount,
+                    "remaining_amount": remaining_amount,
+                    "status": InvoiceStatus.UNPAID,
+                },
+            )
+
+            if not created:
+                # Invoice already exists — re-sync amounts from the secondary order.
+                # Recompute remaining_amount relative to what has already been paid.
+                invoice.subtotal = subtotal
+                invoice.total_amount = subtotal + (invoice.tax_amount or Decimal("0.00"))
+                invoice.remaining_amount = max(
+                    invoice.total_amount - (invoice.paid_amount or Decimal("0.00")),
+                    Decimal("0.00"),
+                )
+                super(TotalInvoice, invoice).save(
+                    update_fields=["subtotal", "total_amount", "remaining_amount"]
+                )
+
+        return invoice
+
+    # ── Sync from SecondaryOrder ───────────────────────────────────────────────
+    def sync_from_secondary(self):
+        """
+        Pull subtotal directly from the linked SecondaryOrder and recompute
+        invoice totals. Called automatically from SecondaryOrder._sync_invoice()
+        whenever the secondary's subtotal changes.
+
+        Does NOT touch paid_amount or payment status — those are managed
+        exclusively by recalculate_payments().
+        """
+        self.subtotal = self.secondary_order.subtotal
+        self.total_amount = self.subtotal + (self.tax_amount or Decimal("0.00"))
+        self.remaining_amount = max(
+            self.total_amount - (self.paid_amount or Decimal("0.00")),
+            Decimal("0.00"),
+        )
         super().save(update_fields=["subtotal", "total_amount", "remaining_amount"])
 
-    def _calculate_ternary_subtotal(self):
-        """
-        Sum subtotals of all TernaryOrders under this SecondaryOrder
-        that fall within the invoice period.
-        """
-        
-        result = self.secondary_order.ternary_orders.filter(
-            start_datetime__lte=self.period_end,
-            end_datetime__gte=self.period_start,
-        ).aggregate(
-            total=Coalesce(Sum("subtotal"), Decimal("0.00"))
-        )
+    def recalculate_totals(self):
+        """Public method for manual recalculation (e.g. after tax_amount changes)."""
+        self.sync_from_secondary()
 
-        return result["total"]
-
+    # ── Payment state ──────────────────────────────────────────────────────────
     def recalculate_payments(self):
-        """
-        Recompute paid_amount, remaining_amount and status
-        from all recorded payments. Called after any payment change.
-        """
+        """Recompute paid_amount, remaining_amount and status from all payments."""
         self.paid_amount = self.payments.aggregate(
             total=Coalesce(Sum("amount"), Decimal("0.00"))
         )["total"]
@@ -844,25 +925,20 @@ class TotalInvoice(models.Model):
             self.status = InvoiceStatus.PARTIALLY_PAID
 
         super().save(update_fields=["paid_amount", "remaining_amount", "status"])
-        self.refresh_from_db()
 
+# Payment
 class Payment(models.Model):
-
     invoice = models.ForeignKey(
-        TotalInvoice,
-        related_name="payments",
-        on_delete=models.CASCADE
+        TotalInvoice, related_name="payments", on_delete=models.CASCADE
     )
-
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
 
-    amount    = models.DecimalField(max_digits=12, decimal_places=2)
-    method    = models.CharField(max_length=20, choices=PaymentMethod.choices)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    method = models.CharField(max_length=20, choices=PaymentMethod.choices)
     paid_date = models.DateTimeField(default=timezone.now)
     reference = models.CharField(max_length=100, blank=True)
 
     is_verified = models.BooleanField(default=False)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -882,18 +958,23 @@ class Payment(models.Model):
             self.reference = f"PAY-{uuid.uuid4().hex[:10].upper()}"
 
         super().save(*args, **kwargs)
-        self.invoice.recalculate_payments()
+
+        if not kwargs.get("update_fields"):
+            self.invoice.recalculate_payments()
 
     # ── Actions ────────────────────────────────────────────────────────────────
 
     def _set_verified(self, state: bool) -> bool:
-        """Shared logic for verify / unverify."""
+        """
+        Toggle verification state.
+        """
         if self.is_verified == state:
             return False
 
         with transaction.atomic():
             self.is_verified = state
-            self.save(update_fields=["is_verified"])
+            # Bypass Payment.save() hook to avoid double recalculation
+            super(Payment, self).save(update_fields=["is_verified"])
             self.invoice.recalculate_payments()
 
         return True
@@ -903,3 +984,4 @@ class Payment(models.Model):
 
     def unverify(self) -> bool:
         return self._set_verified(False)
+    

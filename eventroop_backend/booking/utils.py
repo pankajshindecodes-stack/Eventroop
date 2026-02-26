@@ -3,71 +3,41 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from .constants import BookingStatus
+from decimal import Decimal
+from dateutil.relativedelta import relativedelta
 
-def get_month_boundaries(date):
-    """
-    Get the first and last day of the month for a given date.
-    
-    Returns:
-        tuple: (month_start, month_end)
-    """
-    month_start = date.replace(day=1)
-    month_end = month_start + relativedelta(months=1) - timedelta(days=1)
-    return month_start, month_end
+def calculate_amount(startdate, enddate, package):
+    if not startdate or not enddate:
+        raise ValueError("Start date and end date are required")
 
-def calculate_outstanding_balance(user):
-    """
-    Calculate total outstanding balance for a user across all invoices.
-    
-    Args:
-        user: CustomUser instance
-        
-    Returns:
-        Decimal: Total outstanding amount
-    """
-    from .models import TotalInvoice
-    
-    total = TotalInvoice.objects.filter(
-        user=user,
-        status__in=['UNPAID', 'PARTIALLY_PAID']
-    ).values_list('remaining_amount', flat=True)
-    
-    return sum(total, Decimal("0.00"))
+    if enddate < startdate:
+        raise ValueError("End date must be >= start date")
 
+    # DAILY PACKAGE
+    if package.period == "DAILY":
+        delta = relativedelta(enddate.date(), startdate.date())
+        total_days = delta.days + 1   # include end date
+        return Decimal(total_days) * package.price
 
-def get_invoices_due_soon(days=7):
-    """
-    Get all invoices due within specified days.
-    
-    Args:
-        days: int number of days
-        
-    Returns:
-        QuerySet of TotalInvoice instances
-    """
-    from .models import TotalInvoice
-    from django.db.models import Q
-    
-    today = timezone.now().date()
-    due_date = today + timedelta(days=days)
-    
-    return TotalInvoice.objects.filter(
-        Q(due_date__lte=due_date) & Q(due_date__gte=today),
-        status__in=['UNPAID', 'PARTIALLY_PAID']
-    )
+    # HOURLY PACKAGE
+    elif package.period == "HOURLY":
+        delta = relativedelta(enddate, startdate)
 
+        total_hours = (
+            delta.days * 24
+            + delta.hours
+            + (1 if delta.minutes > 0 or delta.seconds > 0 else 0)
+        )
 
-def send_invoice_reminder(invoice):
-    """
-    Send invoice reminder to patient/user.
+        # If start == end (same time), count as 1 hour
+        if total_hours == 0:
+            total_hours = 1
+
+        return Decimal(total_hours) * package.price
+
+    else:
+        raise ValueError(f"Unsupported package type:{package.period}")
     
-    Args:
-        invoice: TotalInvoice instance
-    """
-    # Implement your email/notification logic here
-    # Example: send_email(invoice.user.email, "Invoice Reminder", template_context)
-    pass
-
 def auto_update_status(start_datetime,end_datetime):
     now = timezone.now()
     status =  BookingStatus.DRAFT
@@ -78,7 +48,6 @@ def auto_update_status(start_datetime,end_datetime):
     elif now > end_datetime:
         status = BookingStatus.UNFULFILLED
     return status
-   
 
 def generate_order_id(instance):
     if not instance.id:
