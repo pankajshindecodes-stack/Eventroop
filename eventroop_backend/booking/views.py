@@ -739,9 +739,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         }
         """
         primary_order    = self.get_object()
+        secondary_order_id = request.data.get('secondary_order_id')
         ternary_order_id = request.data.get('ternary_order_id')
         new_status       = request.data.get('status')
-
+        
         if not new_status:
             return Response({"error": "Status is required."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -750,9 +751,18 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         target = primary_order
 
+        if secondary_order_id:
+            try:
+                target = SecondaryOrder.objects.get(
+                    id=secondary_order_id,
+                    primary_order=primary_order
+                )
+            except SecondaryOrder.DoesNotExist:
+                return Response({"error": "Invalid secondary_order_id."}, status=status.HTTP_400_BAD_REQUEST)
+        
         if ternary_order_id:
             try:
-                target = TernaryOrder.objects.get(
+                TernaryOrder.objects.get(
                     id=ternary_order_id,
                     secondary_order__primary_order=primary_order
                 )
@@ -769,9 +779,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             target.status = new_status
             target.save(update_fields=['status'], skip_auto_status=True)
+            
+            if secondary_order_id:
+                target.ternary_orders.all().update(status=new_status)
 
             # If PrimaryOrder status changed → sync all SecondaryOrders and TernaryOrders
-            if not ternary_order_id:
+            if not (ternary_order_id or secondary_order_id):
                 secondary_ids = primary_order.secondary_orders.values_list('id', flat=True)
                 SecondaryOrder.objects.filter(id__in=secondary_ids).update(status=new_status)
                 TernaryOrder.objects.filter(secondary_order_id__in=secondary_ids).update(status=new_status)
@@ -780,7 +793,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             "message": "Status updated successfully.",
             "order_id": target.id,
             "new_status": new_status
-        })
+        },status=status.HTTP_200_OK)
 
     # ── Info endpoints ─────────────────────────────────────────────────────────
 
