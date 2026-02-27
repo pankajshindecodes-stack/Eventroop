@@ -331,9 +331,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         queryset = PrimaryOrder.objects.select_related(
             'patient', 'venue', 'service', 'package', 'user'
         ).prefetch_related('secondary_orders__ternary_orders')
-
+        
         if user.is_customer:
-            queryset = queryset.filter(user=user)
+            queryset = queryset.filter(Q(patient__registered_by=user)|Q(user=user))
 
         now = timezone.now()
 
@@ -731,7 +731,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         },status=status.HTTP_200_OK)
 
     # ── Info endpoints ─────────────────────────────────────────────────────────
-
     @action(detail=False, methods=['get'])
     def by_venue(self, request):
         """List all venue PrimaryOrders with nested secondary/ternary data."""
@@ -828,7 +827,7 @@ class TotalInvoiceViewSet(viewsets.ModelViewSet):
 
         # Filter by customer
         if user.is_customer:
-            queryset = queryset.filter(user=user)
+            queryset = queryset.filter(Q(patient__registered_by=user)|Q(user=user))
 
         months_param = self.request.query_params.get('filter_months', None)
 
@@ -1024,8 +1023,9 @@ class PaymentViewSet(viewsets.ModelViewSet):
         """Get payments for invoices belonging to current user"""
         queryset = Payment.objects.select_related('invoice', 'patient')
         user = self.request.user
+        
         if user.is_customer:
-            queryset = queryset.filter(invoice__user=user)
+            queryset = queryset.filter(Q(patient__registered_by=user)|Q(user=user))
     
         return queryset
     
