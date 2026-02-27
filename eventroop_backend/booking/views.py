@@ -674,14 +674,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         Payload:
         {
             "status": "CONFIRMED",
-            "ternary_order_id": 5   # optional — targets a specific TernaryOrder
+            "secondary_order_id": 3,  # optional — targets a specific SecondaryOrder
+            "ternary_order_id": 5     # optional — targets a specific TernaryOrder
         }
         """
-        primary_order    = self.get_object()
+        primary_order      = self.get_object()
         secondary_order_id = request.data.get('secondary_order_id')
-        ternary_order_id = request.data.get('ternary_order_id')
-        new_status       = request.data.get('status')
-        
+        ternary_order_id   = request.data.get('ternary_order_id')
+        new_status         = request.data.get('status')
+
         if not new_status:
             return Response({"error": "Status is required."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -698,16 +699,16 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
             except SecondaryOrder.DoesNotExist:
                 return Response({"error": "Invalid secondary_order_id."}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         if ternary_order_id:
             try:
-                TernaryOrder.objects.get(
+                target = TernaryOrder.objects.get(
                     id=ternary_order_id,
                     secondary_order__primary_order=primary_order
                 )
             except TernaryOrder.DoesNotExist:
                 return Response({"error": "Invalid ternary_order_id."}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         available_statuses = MANUAL_STATUS_TRANSITIONS.get(target.status, [])
         if new_status not in available_statuses:
             return Response(
@@ -718,12 +719,19 @@ class OrderViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             target.status = new_status
             target.save(update_fields=['status'], skip_auto_status=True)
-            
-            if secondary_order_id:
+
+            # If primary order is canceled, force cascade to ALL secondaries and ternaries
+            if target == primary_order and new_status == BookingStatus.CANCELED:
+                secondary_ids = primary_order.secondary_orders.values_list('id', flat=True)
+                SecondaryOrder.objects.filter(id__in=secondary_ids).update(status=new_status)
+                TernaryOrder.objects.filter(secondary_order_id__in=secondary_ids).update(status=new_status)
+
+            elif secondary_order_id and not ternary_order_id:
+                # Cascade to this secondary's ternary orders only
                 target.ternary_orders.all().update(status=new_status)
 
-            # If PrimaryOrder status changed → sync all SecondaryOrders and TernaryOrders
-            if not (ternary_order_id or secondary_order_id):
+            elif not ternary_order_id and not secondary_order_id:
+                # Primary status change (non-cancel): cascade to all children
                 secondary_ids = primary_order.secondary_orders.values_list('id', flat=True)
                 SecondaryOrder.objects.filter(id__in=secondary_ids).update(status=new_status)
                 TernaryOrder.objects.filter(secondary_order_id__in=secondary_ids).update(status=new_status)
@@ -732,7 +740,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             "message": "Status updated successfully.",
             "order_id": target.id,
             "new_status": new_status
-        },status=status.HTTP_200_OK)
+        }, status=status.HTTP_200_OK)
 
     # ── Info endpoints ─────────────────────────────────────────────────────────
     @action(detail=False, methods=['get'])
