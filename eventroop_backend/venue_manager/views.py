@@ -64,7 +64,7 @@ class VenueViewSet(viewsets.ModelViewSet):
             return qs.filter(owner=user)
         elif user.is_manager:
             return qs.filter(manager=user)
-        elif user.is_staff_user_type:
+        elif user.is_vsre_staff:
             return qs.filter(staff=user)
     
     # CREATE → OWNER ONLY    
@@ -81,11 +81,6 @@ class VenueViewSet(viewsets.ModelViewSet):
             instance.soft_delete()
         else:
             instance.delete()
-
-    @action(detail=False, methods=["get"])
-    def venue_dropdown(self,request):
-        queryset = self.filter_queryset(self.get_queryset())
-        return Response(VenueDropdownSerializer(queryset,many=True).data)
 
 # SERVICE VIEWSET
 class ServiceViewSet(viewsets.ModelViewSet):
@@ -139,11 +134,6 @@ class ServiceViewSet(viewsets.ModelViewSet):
             instance.soft_delete()
         else:
             instance.delete()
-
-    @action(detail=False, methods=["get"])
-    def service_dropdown(self,request):
-        queryset = self.filter_queryset(self.get_queryset())
-        return Response(ServiceDropdownSerializer(queryset,many=True).data)
 
 class EntityAssignUsersAPI(views.APIView):
     permission_classes = [IsAuthenticated, CanAssignUsers]

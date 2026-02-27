@@ -1,5 +1,5 @@
 from venue_manager.models import Venue, Service, Resource
-from venue_manager.serializers import VenueSerializer, ServiceSerializer
+from venue_manager.serializers import VenueSerializer, ServiceSerializer,VenueDropdownSerializer,ServiceDropdownSerializer
 from rest_framework import viewsets, permissions, status
 from .serializers import *
 from .models import *
@@ -44,6 +44,10 @@ class PublicVenueViewSet(viewsets.ReadOnlyModelViewSet):
         "location__city",
         "location__state",
     ]
+    @action(detail=False, methods=["get"])
+    def venue_dropdown(self,request):
+        queryset = self.filter_queryset(self.get_queryset())
+        return Response(VenueDropdownSerializer(queryset,many=True).data)
 
 class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -74,6 +78,11 @@ class PublicServiceViewSet(viewsets.ReadOnlyModelViewSet):
         "tags",
         "quick_info"
     ]
+    @action(detail=False, methods=["get"])
+    def service_dropdown(self,request):
+        queryset = self.filter_queryset(self.get_queryset())
+        return Response(ServiceDropdownSerializer(queryset,many=True).data)
+
 
 class PatientViewSet(viewsets.ModelViewSet):
     queryset = Patient.objects.all()
