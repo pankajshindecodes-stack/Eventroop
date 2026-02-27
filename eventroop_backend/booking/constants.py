@@ -62,6 +62,10 @@ MANUAL_STATUS_TRANSITIONS = {
         BookingStatus.FULFILLED,
         BookingStatus.PARTIALLY_FULFILLED,
     ],
+    BookingStatus.PARTIALLY_FULFILLED: [
+        BookingStatus.UNFULFILLED,
+        BookingStatus.IN_PROGRESS,
+    ]
 }
 
 class InvoiceStatus(models.TextChoices):

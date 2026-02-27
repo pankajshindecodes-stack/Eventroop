@@ -642,12 +642,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
                 if new_package:
                     ternary_order.package_id = new_package
+                    ternary_order.status  = BookingStatus.MODIFIED
+                else:
+                    ternary_order.status  = BookingStatus.RESCHEDULED
+
                 if discount_amount is not None:
                     ternary_order.discount_amount = discount_amount
                 if premium_amount is not None:
                     ternary_order.premium_amount  = premium_amount
-
-                ternary_order.save()
+                
+                ternary_order.save(skip_auto_status=True)
 
                 ternary_order.secondary_order.recalculate_subtotal()
                 primary_order.recalculate_total()
@@ -703,7 +707,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
             except TernaryOrder.DoesNotExist:
                 return Response({"error": "Invalid ternary_order_id."}, status=status.HTTP_400_BAD_REQUEST)
-
+        
         available_statuses = MANUAL_STATUS_TRANSITIONS.get(target.status, [])
         if new_status not in available_statuses:
             return Response(
