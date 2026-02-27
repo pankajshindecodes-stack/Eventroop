@@ -289,7 +289,6 @@ class PackageViewSet(viewsets.ModelViewSet):
         try:
             obj = Model.objects.get(
                 id=object_id,
-                owner=request.user,
                 is_active=True,
             )
         except Model.DoesNotExist:
