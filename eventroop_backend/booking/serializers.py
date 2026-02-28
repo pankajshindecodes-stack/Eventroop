@@ -180,7 +180,7 @@ class TernaryOrderCreateSerializer(serializers.ModelSerializer):
                     {
                         "start_datetime": (
                             "Service dates must fall within the primary order range "
-                            f"({primary_order.start_datetime} – {primary_order.end_datetime})."
+                            f"({primary_order.start_datetime} - {primary_order.end_datetime})."
                         )
                     }
                 )
