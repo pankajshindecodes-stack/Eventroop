@@ -443,6 +443,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         }
         """
         primary_order = self.get_object()
+        user = request.user
+
+        # Permission Check
+        if not (user.is_superuser or primary_order.user == user or 
+                (user.is_owner and primary_order.patient.registered_by.hierarchy.owner == user)):
+             return Response(
+                {"detail": "You do not have permission to modify this order."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         if primary_order.status == BookingStatus.CANCELLED:
             return Response(

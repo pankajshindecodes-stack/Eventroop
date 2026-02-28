@@ -164,7 +164,13 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
     filterset_fields = ["salary_report", "status"]
 
     def get_queryset(self):
-        queryset = SalaryTransaction.objects.all()
+        user = self.request.user
+        if user.is_superuser:
+            queryset = SalaryTransaction.objects.all()
+        elif user.is_owner:
+            queryset = SalaryTransaction.objects.filter(salary_report__user__hierarchy__owner=user)
+        else:
+            queryset = SalaryTransaction.objects.filter(salary_report__user=user)
 
         status_filter = self.request.query_params.get('status')
         if status_filter:
@@ -185,12 +191,20 @@ class SalaryTransactionViewSet(viewsets.ModelViewSet):
 
     @db_transaction.atomic
     def create(self, request, *args, **kwargs):
+        user = request.user
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         salary_report = SalaryReport.objects.select_for_update().get(
             id=serializer.validated_data['salary_report_id']
         )
+
+        # Permission Check: Only Owner or Admin can create transactions for their staff
+        if (not user.is_superuser) or (not user.is_owner) or (salary_report.user.hierarchy.owner != user):
+                 return Response(
+                    {"detail": "You do not have permission to record payments for this report."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
 
         amount_paid = serializer.validated_data['amount_paid']
 
