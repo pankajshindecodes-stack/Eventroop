@@ -293,6 +293,8 @@ class PrimaryOrderSerializer(serializers.ModelSerializer):
             'start_datetime',
             'end_datetime',
             'auto_continue',
+            'discount_amount',
+            'premium_amount',
             # nested
             'secondary_orders',
             # timestamps
@@ -353,6 +355,8 @@ class PrimaryOrderCreateSerializer(serializers.ModelSerializer):
             'package',
             'start_datetime',
             'end_datetime',
+            'discount_amount',
+            'premium_amount',
             'auto_continue',
             'dates',
         ]
@@ -361,6 +365,8 @@ class PrimaryOrderCreateSerializer(serializers.ModelSerializer):
             'venue':           {'required': False},
             'start_datetime':  {'required': False},
             'end_datetime':    {'required': False},
+            'discount_amount':  {'required': False},
+            'premium_amount':    {'required': False},
         }
 
     def validate(self, data):

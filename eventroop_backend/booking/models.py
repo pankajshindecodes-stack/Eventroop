@@ -306,6 +306,8 @@ class PrimaryOrder(models.Model):
     total_bill = models.DecimalField(
         max_digits=10, decimal_places=2, default=Decimal("0.00"), editable=False
     )
+    discount_amount  = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    premium_amount   = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     booking_type = models.CharField(
         max_length=25,
         choices=BookingType.choices,
@@ -378,7 +380,13 @@ class PrimaryOrder(models.Model):
                             primary_order=self,
                             start_datetime=start_dt,
                             end_datetime=end_dt,
-                            subtotal=calculate_amount(start_dt, end_dt, self.package),
+                            pkg_price = self.package.price,
+                            subtotal= (
+                                (
+                                    calculate_amount(start_dt, end_dt, self.package)
+                                    + self.premium_amount
+                                ) - self.discount_amount
+                                ),
                         )
                     )
 
@@ -396,7 +404,12 @@ class PrimaryOrder(models.Model):
                             primary_order=self,
                             start_datetime=start_dt,
                             end_datetime=end_dt,
-                            subtotal=calculate_amount(start_dt, end_dt, self.package),
+                            subtotal=(
+                                (
+                                    calculate_amount(start_dt, end_dt, self.package)
+                                    + self.premium_amount
+                                ) - self.discount_amount
+                                ),
                         )
                     )
 
@@ -437,6 +450,9 @@ class PrimaryOrder(models.Model):
         """Create SecondaryOrders by splitting the full booking range into periods."""
         period_type = self.package.period
         pkg_price = self.package.price
+        discount_amount = self.discount_amount
+        premium_amount = self.premium_amount
+        final_price = ((pkg_price + premium_amount)- discount_amount)
 
         period_generators = {
             PeriodChoices.MONTHLY: self._get_monthly_periods,
@@ -459,7 +475,7 @@ class PrimaryOrder(models.Model):
                     primary_order=self,
                     start_datetime=slot_start,
                     end_datetime=slot_end,
-                    subtotal=pkg_price,
+                    subtotal=final_price ,
                 )
                 for slot_start, slot_end in periods
             ]
@@ -482,21 +498,22 @@ class PrimaryOrder(models.Model):
     # ── Period helpers ─────────────────────────────────────────────────────────
     def _get_monthly_periods(self):
         """
-        Split range into calendar-month periods.
-        Example: Feb 15 → Apr 25  =  (Feb 15, Feb 28), (Mar 1, Mar 31), (Apr 1, Apr 25)
+        Split range into calendar-month periods anchored to the start date.
+        Example: Feb 4 → Mar 3  =  one period (Feb 4, Mar 3)
+                Feb 4 → Apr 9  =  (Feb 4, Mar 3), (Mar 4, Apr 3), (Apr 4, Apr 9)
         """
         periods = []
         current = self.start_datetime
 
         while current < self.end_datetime:
-            month_end = (
-                current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                + relativedelta(months=1)
-                - timedelta(microseconds=1)
+            next_period_start = current + relativedelta(months=1)
+            # Period ends the day BEFORE next cycle starts
+            period_end = min(
+                next_period_start - timedelta(days=1),
+                self.end_datetime
             )
-            period_end = min(month_end, self.end_datetime)
             periods.append((current, period_end))
-            current = period_end + timedelta(microseconds=1)
+            current = next_period_start
 
         return periods
 

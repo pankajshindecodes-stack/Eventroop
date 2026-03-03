@@ -142,7 +142,7 @@ class PrimaryOrderAdmin(admin.ModelAdmin):
             "fields": ("start_datetime", "end_datetime"),
         }),
         ("Financials", {
-            "fields": ("total_bill",),
+            "fields": ("total_bill",'discount_amount','premium_amount'),
         }),
         ("Status & Timestamps", {
             "fields": ("status", "created_at", "updated_at"),
