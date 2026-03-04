@@ -317,6 +317,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     search_fields = ['patient__first_name', 'patient__last_name', 'booking_entity', 'status']
     filterset_fields = {
         'patient': ['exact'],
+        'package': ['exact'],
         'start_datetime': ['month'],
         'end_datetime': ['month'],
         'booking_type': ['exact'],
