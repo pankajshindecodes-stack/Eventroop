@@ -380,7 +380,6 @@ class PrimaryOrder(models.Model):
                             primary_order=self,
                             start_datetime=start_dt,
                             end_datetime=end_dt,
-                            pkg_price = self.package.price,
                             subtotal= (
                                 (
                                     calculate_amount(start_dt, end_dt, self.package)
