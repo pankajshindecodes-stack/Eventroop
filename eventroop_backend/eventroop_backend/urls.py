@@ -18,6 +18,7 @@ urlpatterns = [
     path('booking/', include(('booking.urls', 'booking'), namespace='booking')),
     path('attendance/', include(('attendance.urls', 'attendance'), namespace='attendance')),
     path('payroll/', include(('payroll.urls', 'payroll'), namespace='payroll')),
+    path('notification/', include(('notification.urls', 'notification'), namespace='notification')),
 ]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

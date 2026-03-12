@@ -19,7 +19,8 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 # ----------------- APPLICATIONS -----------------
 INSTALLED_APPS = [
     # Django apps
-    # 'simpleui',
+    # 'simpleui', 
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -34,6 +35,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'django_celery_beat',
+    'channels',
+    'push_notifications',
 
     # Cloudinary Apps only when enabled
     'cloudinary',
@@ -45,6 +48,7 @@ INSTALLED_APPS = [
     'booking',
     "attendance",
     "payroll",
+    "notification",
 ]
 
 # ----------------- MIDDLEWARE -----------------
@@ -88,13 +92,23 @@ ROOT_URLCONF = 'eventroop_backend.urls'
 WSGI_APPLICATION = 'eventroop_backend.wsgi.application'
 ASGI_APPLICATION = "eventroop_backend.asgi.application"
 
+# ----------------- Notification, Redis, Celery and channel -----------------
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {'hosts': [('127.0.0.1', 6379)]},
+    }
+}
+
 CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
 # TODO: currenly working on 1 cpu because db is free version, Update later
 CELERY_WORKER_POOL = 'solo'
 CELERY_WORKER_CONCURRENCY = 1 
 
-
-
+PUSH_NOTIFICATIONS_SETTINGS = {
+    'FCM_API_KEY': 'your-firebase-key',   # Android
+    'APNS_CERTIFICATE': '/path/to/cert',  # iOS
+}
 
 # ----------------- TEMPLATES -----------------
 TEMPLATES = [

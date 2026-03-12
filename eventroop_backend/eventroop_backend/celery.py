@@ -12,6 +12,10 @@ app.autodiscover_tasks()
 
 # Configure Celery Beat Schedule
 app.conf.beat_schedule = {
+     'daily-digest': {
+        'task': 'notifications.tasks.send_daily_digest',
+        'schedule': crontab(hour=8, minute=0),  # Every day at 8am
+    },
     'mark-attendance-present': {
         'task': 'attendance.tasks.mark_attendance_present',
         # 'schedule': crontab(hour=0, minute=0),  # Run daily at midnight
