@@ -42,6 +42,8 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "address",
             "city",
             "date_joined",
+            "is_active",
+            "is_deleted",
             "created_by",
             "password",
             "confirm_password"

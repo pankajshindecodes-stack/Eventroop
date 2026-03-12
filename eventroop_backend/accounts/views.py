@@ -239,6 +239,12 @@ class ManagerViewSet(viewsets.ModelViewSet):
             
         )
         return user
+    
+    def perform_destroy(self, instance):
+        if hasattr(instance, "soft_delete"):
+            instance.soft_delete()
+        else:
+            instance.delete()
 
 class StaffViewSet(viewsets.ModelViewSet):
     """
@@ -258,6 +264,7 @@ class StaffViewSet(viewsets.ModelViewSet):
             created_by=self.request.user,
             hierarchy__owner=self.request.user,
             user_type=CustomUser.UserTypes.VSRE_STAFF,
+            is_active= True, is_deleted= False,
         )
     def get_serializer_class(self):
         if self.action == "list":
@@ -273,6 +280,13 @@ class StaffViewSet(viewsets.ModelViewSet):
         # create user first
         user = serializer.save(user_type=CustomUser.UserTypes.VSRE_STAFF)
         return user
+    
+    def perform_destroy(self, instance):
+        
+        if hasattr(instance, "soft_delete"):
+            instance.soft_delete()
+        # else:
+        #     instance.delete()
 
 class ParentAssignmentView(APIView):
     """

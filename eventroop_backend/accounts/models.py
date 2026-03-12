@@ -171,6 +171,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
     date_joined = models.DateField(blank=True, null=True)
     last_working_day = models.DateField(blank=True, null=True)
     order_types = models.JSONField(blank=True, null=True)
@@ -202,6 +203,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}"
+    
+    def soft_delete(self):
+        self.is_active = False
+        self.is_deleted = True
+        self.save()
    
     def can_manage_entity(self, entity):
         """Check if user has permission to manage specific entity"""
