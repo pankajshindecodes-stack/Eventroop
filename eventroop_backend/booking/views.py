@@ -744,6 +744,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             "ternary_order_id": 5     # optional — targets a specific TernaryOrder
         }
         """
+
         primary_order      = self.get_object()
         secondary_order_id = request.data.get('secondary_order_id')
         ternary_order_id   = request.data.get('ternary_order_id')
@@ -787,7 +788,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             target.save(update_fields=['status'], skip_auto_status=True)
 
             # If primary order is canceled, force cascade to ALL secondaries and ternaries
-            if target == primary_order and new_status == BookingStatus.CANCELED:
+            if target == primary_order and new_status == BookingStatus.CANCELLED:
                 secondary_ids = primary_order.secondary_orders.values_list('id', flat=True)
                 SecondaryOrder.objects.filter(id__in=secondary_ids).update(status=new_status)
                 TernaryOrder.objects.filter(secondary_order_id__in=secondary_ids).update(status=new_status)
