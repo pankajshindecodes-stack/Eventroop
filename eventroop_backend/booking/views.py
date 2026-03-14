@@ -776,12 +776,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             except TernaryOrder.DoesNotExist:
                 return Response({"error": "Invalid ternary_order_id."}, status=status.HTTP_400_BAD_REQUEST)
 
-        available_statuses = MANUAL_STATUS_TRANSITIONS.get(target.status, [])
-        if new_status not in available_statuses:
-            return Response(
-                {"error": f"Cannot transition from '{target.status}' to '{new_status}'."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # available_statuses = MANUAL_STATUS_TRANSITIONS.get(target.status, [])
+        # if new_status not in available_statuses:
+        #     return Response(
+        #         {"error": f"Cannot transition from '{target.status}' to '{new_status}'."},
+        #         status=status.HTTP_400_BAD_REQUEST
+        #     )
 
         with transaction.atomic():
             target.status = new_status
