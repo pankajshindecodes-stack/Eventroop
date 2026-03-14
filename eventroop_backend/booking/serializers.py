@@ -409,19 +409,7 @@ class PrimaryOrderCreateSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        service = data.get("service")
-        venue = data.get("venue")
-        if bool(service) == bool(venue):
-            raise serializers.ValidationError(
-                {"non_field_errors": "Provide either venue OR service (exactly one)."}
-            )
-
-        # Set booking_entity automatically
-        if venue:
-            data["booking_entity"] = BookingEntity.VENUE
-        else:
-            data["booking_entity"] = BookingEntity.SERVICE
-
+        data["booking_entity"] = BookingEntity.SERVICE
     
         has_dates      = 'dates' in data
         start_datetime = data.get('start_datetime')
