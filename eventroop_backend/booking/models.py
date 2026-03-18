@@ -332,10 +332,7 @@ class PrimaryOrder(models.Model):
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     def save(self, *args, **kwargs):
-        # Extract custom flags before passing kwargs to super()
         skip_auto_status = kwargs.pop("skip_auto_status", False)
-
-        # save — otherwise we overwrite unrelated fields unintentionally.
         update_fields = kwargs.get("update_fields")
         is_targeted_save = update_fields is not None
 
@@ -583,7 +580,7 @@ class PrimaryOrder(models.Model):
 
         self.total_bill = total
         super().save(update_fields=["total_bill"])
- 
+
 class SecondaryOrder(models.Model):
     """One record per period (month/week/day) within a PrimaryOrder span."""
 
@@ -640,24 +637,7 @@ class SecondaryOrder(models.Model):
             self.order_id = generate_order_id(self)
             super().save(update_fields=["order_id"])
 
-        if not skip_primary_recalc and not is_targeted_save and self.primary_order_id:
-            self.primary_order.recalculate_total()
-
-        if not is_targeted_save:
-            self._sync_invoice()
-
-        # Generate or update invoice when status enters a trigger state.
-        INVOICE_TRIGGER_STATUSES = {
-            BookingStatus.UNFULFILLED,
-            BookingStatus.PARTIALLY_FULFILLED,
-            BookingStatus.FULFILLED,
-        }
-        if self.status in INVOICE_TRIGGER_STATUSES:
-            TotalInvoice.create_or_update_for_secondary(self)
-
-
     # ── Calculations ───────────────────────────────────────────────────────────
-
     def recalculate_subtotal(self):
         """
         Recompute subtotal as: base_price + Sum(TernaryOrder.subtotal)
@@ -673,12 +653,6 @@ class SecondaryOrder(models.Model):
 
         if self.primary_order_id:
             self.primary_order.recalculate_total()
-        self._sync_invoice()
-
-    def _sync_invoice(self):
-        invoice = self.invoices.filter(secondary_order=self).first()
-        if invoice:
-            invoice.sync_from_secondary()
 
 class TernaryOrder(models.Model):
     """One record per service/booking line item within a SecondaryOrder."""
@@ -751,8 +725,6 @@ class TernaryOrder(models.Model):
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     def save(self, *args, **kwargs):
         skip_auto_status = kwargs.pop("skip_auto_status", False)
-        skip_subtotal_recalc = kwargs.pop("skip_subtotal_recalc", False)
-
         update_fields = kwargs.get("update_fields")
         is_targeted_save = update_fields is not None
         
@@ -760,35 +732,19 @@ class TernaryOrder(models.Model):
             if not skip_auto_status:
                 self.status = auto_update_status(self.start_datetime, self.end_datetime)
             self.booking_type = self.package.package_type
+        
         base_amount = calculate_amount(self.start_datetime,self.end_datetime,self.package)
 
         discount = self.discount_amount or Decimal("0.00")
         premium = self.premium_amount or Decimal("0.00")
 
-        self.subtotal = base_amount - discount + premium
+        self.subtotal = base_amount + premium - discount 
         super().save(*args, **kwargs)
 
         if not self.order_id:
             self.order_id = generate_order_id(self)
             super().save(update_fields=["order_id"])
         
-        if not skip_subtotal_recalc and not is_targeted_save:
-            with transaction.atomic():
-                self.secondary_order.recalculate_subtotal()
-        
-        INVOICE_TRIGGER_STATUSES = {
-            BookingStatus.UNFULFILLED,
-            BookingStatus.PARTIALLY_FULFILLED,
-            BookingStatus.FULFILLED,
-        }
-        if not is_targeted_save and self.status in INVOICE_TRIGGER_STATUSES:
-            TotalInvoice.create_or_update_for_ternary(self)
-
-    def _sync_invoice(self):
-        invoice = self.invoices.filter(ternary_order=self).first()
-        if invoice:
-            invoice.sync_from_ternary()
-
 class TotalInvoice(models.Model):
     """One invoice per SecondaryOrder or TernaryOrder."""
 
@@ -862,10 +818,10 @@ class TotalInvoice(models.Model):
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     def save(self, *args, **kwargs):
         self.total_amount = (
-            self.subtotal + 
+            self.subtotal +  
+            self.tax_amount +
             self.premium_amount - 
-            self.discount_amount + 
-            self.tax_amount
+            self.discount_amount
         )
         
         self.remaining_amount = max(
@@ -896,15 +852,14 @@ class TotalInvoice(models.Model):
                 defaults={
                     "patient":          primary.patient,
                     "user":             primary.user,
-                    "subtotal":         primary.package.price,
-                    "total_amount":     secondary.subtotal,
-                    "status":           InvoiceStatus.UNPAID,
+                    "subtotal":         secondary.subtotal,
+                    "status":           InvoiceStatus.UNPAID
                 },
             )
 
             if not created:
-                invoice.subtotal         = primary.package.price
-                invoice.total_amount     = secondary.subtotal
+                invoice.subtotal         = secondary.subtotal
+                invoice.total_amount     = invoice.subtotal + invoice.premium_amount + invoice.tax_amount - invoice.discount_amount
                 invoice.remaining_amount = max(
                     invoice.total_amount - (invoice.paid_amount or Decimal("0.00")),
                     Decimal("0.00"),
@@ -937,15 +892,14 @@ class TotalInvoice(models.Model):
                     "parent_invoice":   parent_invoice,
                     "patient":          primary.patient,
                     "user":             primary.user,
-                    "subtotal":         ternary.package.price,
-                    "total_amount":     ternary.subtotal,
+                    "subtotal":         ternary.subtotal,
                     "status":           InvoiceStatus.UNPAID,
                 },
             )
 
             if not created:
-                invoice.subtotal         = ternary.package.price
-                invoice.total_amount     = ternary.subtotal
+                invoice.subtotal         = ternary.subtotal
+                invoice.total_amount     = invoice.subtotal + invoice.premium_amount + invoice.tax_amount - invoice.discount_amount
                 invoice.remaining_amount = max(
                     invoice.total_amount - (invoice.paid_amount or Decimal("0.00")),
                     Decimal("0.00"),
@@ -959,46 +913,6 @@ class TotalInvoice(models.Model):
                 ])
 
         return invoice
-
-    # ── Sync ───────────────────────────────────────────────────────────────────
-    def sync_from_secondary(self):
-        """
-        Re-pull base price from package.
-        Does NOT touch paid_amount or status.
-        """
-        self.subtotal         = self.secondary_order.primary_order.package.price
-        self.total_amount     = (self.subtotal+ self.premium_amount- self.discount_amount+ self.tax_amount)
-        self.remaining_amount = max(
-            self.total_amount - (self.paid_amount or Decimal("0.00")),
-            Decimal("0.00"),
-        )
-        super().save(update_fields=["subtotal", "total_amount", "remaining_amount"])
-
-    def sync_from_ternary(self):
-        """
-        Re-pull amounts from the linked TernaryOrder.
-        Does NOT touch paid_amount or status.
-        """
-        t = self.ternary_order
-        self.subtotal         = t.subtotal
-        self.discount_amount  = t.discount_amount
-        self.premium_amount   = t.premium_amount
-        self.total_amount     = (self.subtotal+ self.premium_amount- self.discount_amount+ self.tax_amount)
-        self.remaining_amount = max(
-            self.total_amount - (self.paid_amount or Decimal("0.00")),
-            Decimal("0.00"),
-        )
-        super().save(update_fields=[
-            "subtotal", "discount_amount", "premium_amount",
-            "total_amount", "remaining_amount",
-        ])
-
-    def recalculate_totals(self):
-        """Public method for manual recalculation (e.g. after tax_amount changes)."""
-        if self.secondary_order_id:
-            self.sync_from_secondary()
-        else:
-            self.sync_from_ternary()
 
     # ── Payments ───────────────────────────────────────────────────────────────
     def recalculate_payments(self):
@@ -1020,7 +934,7 @@ class TotalInvoice(models.Model):
             self.status = InvoiceStatus.PARTIALLY_PAID
 
         super().save(update_fields=["paid_amount", "remaining_amount", "status"])
-        
+
 class Payment(models.Model):
     invoice = models.ForeignKey(
         TotalInvoice, related_name="payments", on_delete=models.CASCADE
@@ -1050,8 +964,6 @@ class Payment(models.Model):
         if not self.reference:
             self.reference = f"PAY-{uuid.uuid4().hex[:10].upper()}"
         super().save(*args, **kwargs)
-        if not kwargs.get("update_fields"):
-            self.invoice.recalculate_payments()
 
     def _set_verified(self, state: bool) -> bool:
         if self.is_verified == state:
@@ -1059,7 +971,6 @@ class Payment(models.Model):
         with transaction.atomic():
             self.is_verified = state
             super(Payment, self).save(update_fields=["is_verified"])
-            self.invoice.recalculate_payments()
         return True
 
     def verify(self) -> bool:
